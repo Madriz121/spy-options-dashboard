@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SPY Options Dashboard — GEX, DEX, Key Levels</title>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
+<style>
+  :root { --bg:#0b0e14; --panel:#131722; --line:#1f2635; --txt:#e8eaf0; --dim:#8b93a7;
+          --green:#26a69a; --red:#ef5350; --blue:#4c8dff; --yellow:#f5c542; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--txt); font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif; }
+  header { display:flex; flex-wrap:wrap; align-items:center; gap:12px; padding:14px 18px; border-bottom:1px solid var(--line); background:var(--panel); position:sticky; top:0; z-index:10; }
+  header h1 { font-size:18px; margin:0; font-weight:650; }
+  .pill { background:#1a2130; border:1px solid var(--line); border-radius:20px; padding:5px 12px; font-size:13px; white-space:nowrap; }
+  .pill b { font-weight:650; }
+  .pill.good { border-color:#1f5c55; color:#7de3d8; }
+  .pill.bad { border-color:#6e2b2b; color:#ff9d9b; }
+  .spacer { flex:1; }
+  .btn { background:#1a2130; color:var(--txt); border:1px solid var(--line); border-radius:8px; padding:7px 12px; font-size:13px; cursor:pointer; }
+  .btn:hover { border-color:var(--blue); }
+  .btn.active { background:#24406e; border-color:var(--blue); }
+  main { padding:16px 18px 40px; max-width:1280px; margin:0 auto; }
+  .cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; margin-bottom:16px; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:10px 12px; }
+  .card .k { font-size:11px; color:var(--dim); text-transform:uppercase; letter-spacing:.5px; margin-bottom:4px; }
+  .card .v { font-size:19px; font-weight:650; }
+  .card .s { font-size:11px; color:var(--dim); margin-top:2px; }
+  .chart { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:12px; margin-bottom:16px; }
+  .chart h2 { font-size:14px; margin:0 0 4px; font-weight:600; }
+  .chart p.hint { font-size:12px; color:var(--dim); margin:0 0 8px; }
+  .chart .box { width:100%; height:380px; }
+  #err { display:none; background:#3a1d1d; border:1px solid #6e2b2b; color:#ffb3b1; border-radius:8px; padding:10px 14px; margin-bottom:14px; font-size:13px; }
+  footer { color:var(--dim); font-size:11px; text-align:center; padding:20px; }
+  #loading { text-align:center; color:var(--dim); padding:60px 0; font-size:14px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>SPY Options Dashboard</h1>
+  <span class="pill">Spot <b id="spot">–</b></span>
+  <span class="pill" id="gexPill">Net GEX <b id="netgex">–</b></span>
+  <span class="pill" id="regimePill">Regime <b id="regime">–</b></span>
+  <span class="pill">P/C vol <b id="pcvol">–</b></span>
+  <span class="pill" style="color:var(--dim)">Updated <b id="updated">–</b></span>
+  <span class="spacer"></span>
+  <button class="btn" data-dte="9999">All expiries</button>
+  <button class="btn active" data-dte="7">≤ 7 DTE</button>
+  <button class="btn" data-dte="0">0DTE</button>
+  <button class="btn" id="refresh">↻ Refresh</button>
+</header>
+<main>
+  <div id="err"></div>
+  <div id="loading">Loading options chain…</div>
+  <div id="dash" style="display:none">
+    <div class="cards" id="levels"></div>
+    <div class="chart"><h2>Gamma exposure by strike</h2>
+      <p class="hint">Green = call GEX (dealers hedge by selling rallies → resistance). Red = put GEX (dealers hedge by buying dips → support). Dashed lines: spot, walls, flip, max pain.</p>
+      <div class="box" id="c1"></div></div>
+    <div class="chart"><h2>Cumulative net GEX</h2>
+      <p class="hint">Running total of net GEX from low to high strikes. The gamma-flip is where it crosses zero — above it dealers dampen moves, below it they amplify them.</p>
+      <div class="box" id="c2" style="height:300px"></div></div>
+    <div class="chart"><h2>Open interest &amp; volume by strike</h2>
+      <p class="hint">Bars = open interest (positioning, updates daily). Line = today's option volume (intraday flow).</p>
+      <div class="box" id="c3"></div></div>
+  </div>
+</main>
+<footer>Data: CBOE delayed quotes (~15 min delayed) · Open interest from prior close · Educational tool, not investment advice.</footer>
+<script>
+const $ = id => document.getElementById(id);
+const BN = 1e9;
+const fmtB = v => (v >= 0 ? '' : '−') + '$' + Math.abs(v / BN).toFixed(2) + 'B';
+const fmtN = v => v == null ? '–' : Number(v).toLocaleString(undefined, {maximumFractionDigits: 0});
+let maxDte = 7, charts = [];
+
+async function load(manual) {
+  $('err').style.display = 'none';
+  try {
+    const r = await fetch(`/api/gex?symbol=SPY&max_dte=${maxDte}${manual ? '&refresh=true' : ''}`);
+    const d = await r.json();
+    if (d.error) throw new Error(d.error);
+    render(d);
+  } catch (e) {
+    const el = $('err');
+    el.textContent = 'Could not load data: ' + e.message + ' — retrying automatically.';
+    el.style.display = 'block';
+  }
+}
+
+function card(k, v, s, tip) {
+  return `<div class="card" title="${tip}"><div class="k">${k}</div><div class="v">${v}</div>${s ? `<div class="s">${s}</div>` : ''}</div>`;
+}
+
+function render(d) {
+  $('loading').style.display = 'none';
+  $('dash').style.display = 'block';
+  $('spot').textContent = '$' + d.spot.toFixed(2);
+  $('netgex').textContent = fmtB(d.totals.net_gex_bn * BN);
+  $('regime').textContent = d.totals.regime;
+  $('pcvol').textContent = d.totals.put_call_vol ?? '–';
+  $('updated').textContent = d.as_of ? d.as_of.replace('T', ' ').slice(0, 16) + ' ET' : 'just now';
+  const gp = $('gexPill'), rp = $('regimePill');
+  gp.className = 'pill ' + (d.totals.net_gex_bn >= 0 ? 'good' : 'bad');
+  rp.className = 'pill ' + (d.totals.net_gex_bn >= 0 ? 'good' : 'bad');
+
+  const L = d.levels, T = d.totals;
+  $('levels').innerHTML =
+    card('Call wall', '$' + L.call_wall, fmtB(L.call_wall_gex * BN) + ' call GEX', 'Strike with the most positive gamma exposure. Dealers hedging short calls sell into rallies — overhead resistance and a magnet into expiry.') +
+    card('Put wall', '$' + L.put_wall, fmtB(L.put_wall_gex * BN) + ' put GEX', 'Strike with the most negative gamma exposure. Dealers hedging short puts buy dips — acts as a support floor.') +
+    card('Gamma flip', L.gamma_flip == null ? '–' : '$' + L.gamma_flip, 'zero-crossing', 'Price where cumulative GEX crosses zero. Above = positive-gamma regime (calm, mean-reverting). Below = negative-gamma regime (volatile, trending).') +
+    card('Max pain', '$' + L.max_pain, 'expiry magnet', 'Strike that minimizes total payout to option holders at expiry. Price often gravitates here into expiration.') +
+    card('Net DEX', fmtB(T.net_dex_bn * BN), 'delta exposure', 'Aggregate dealer delta exposure. Large positive = dealers long delta (supportive); large negative = dealers short delta (heavy).') +
+    card('Top OI strikes', L.top_oi.map(s => '$' + s).join(', '), 'heaviest positioning', 'Strikes with the most open interest — expect reactions and possible pinning near expiry.') +
+    card('Top volume', L.top_vol.map(s => '$' + s).join(', '), "today's flow", "Strikes with the most contracts traded today — where today's positioning is happening.");
+
+  // chart data: strikes within ±12% of spot (walls live near spot)
+  const lo = d.spot * 0.88, hi = d.spot * 1.12;
+  const rows = d.strikes.filter(s => s.strike >= lo && s.strike <= hi);
+  const xs = rows.map(s => s.strike);
+  const cg = rows.map(s => +(s.call_gex / BN).toFixed(3));
+  const pg = rows.map(s => +(s.put_gex / BN).toFixed(3));
+  const ng = rows.map(s => +((s.call_gex + s.put_gex) / BN).toFixed(3));
+  const cum = rows.map(s => +(s.cum_gex / BN).toFixed(3));
+  const coi = rows.map(s => Math.round(s.call_oi)), poi = rows.map(s => Math.round(s.put_oi));
+  const vol = rows.map(s => Math.round(s.total_vol));
+
+  const marks = [
+    {x: d.spot, c: '#e8eaf0', label: 'spot ' + d.spot.toFixed(0)},
+    {x: L.call_wall, c: '#26a69a', label: 'call wall'},
+    {x: L.put_wall, c: '#ef5350', label: 'put wall'},
+  ];
+  if (L.gamma_flip != null) marks.push({x: L.gamma_flip, c: '#f5c542', label: 'flip'});
+  marks.push({x: L.max_pain, c: '#4c8dff', label: 'max pain'});
+  const markLines = marks.filter(m => m.x >= lo && m.x <= hi).map(m => ({
+    xAxis: m.x, lineStyle: {color: m.c, type: 'dashed', width: 1.2},
+    label: {formatter: m.label, color: m.c, fontSize: 10, position: 'insideEndTop'}
+  }));
+
+  charts.forEach(c => c.dispose()); charts = [];
+  const base = {
+    backgroundColor: 'transparent',
+    textStyle: {color: '#8b93a7', fontSize: 11},
+    grid: {left: 56, right: 16, top: 36, bottom: 30},
+    tooltip: {trigger: 'axis', backgroundColor: '#1a2130', borderColor: '#1f2635', textStyle: {color: '#e8eaf0', fontSize: 12}},
+  };
+
+  const c1 = echarts.init($('c1'));
+  c1.setOption({...base,
+    legend: {textStyle: {color: '#8b93a7'}, top: 0},
+    xAxis: {type: 'category', data: xs, axisLabel: {interval: Math.ceil(xs.length / 24)}},
+    yAxis: {type: 'value', name: '$B', nameTextStyle: {color: '#8b93a7'}},
+    series: [
+      {name: 'Call GEX', type: 'bar', data: cg, itemStyle: {color: '#26a69a'}, barGap: '10%'},
+      {name: 'Put GEX', type: 'bar', data: pg, itemStyle: {color: '#ef5350'}},
+      {name: 'Net GEX', type: 'line', data: ng, symbol: 'none', lineStyle: {color: '#e8eaf0', width: 1.5},
+       markLine: {silent: true, symbol: 'none', data: markLines}},
+    ]});
+  charts.push(c1);
+
+  const c2 = echarts.init($('c2'));
+  c2.setOption({...base,
+    xAxis: {type: 'category', data: xs, axisLabel: {interval: Math.ceil(xs.length / 24)}},
+    yAxis: {type: 'value', name: '$B', nameTextStyle: {color: '#8b93a7'}},
+    series: [{name: 'Cumulative GEX', type: 'line', data: cum, symbol: 'none',
+      lineStyle: {color: '#f5c542', width: 2},
+      areaStyle: {color: 'rgba(245,197,66,0.12)'},
+      markLine: {silent: true, symbol: 'none', data: [
+        {yAxis: 0, lineStyle: {color: '#3a4358', type: 'solid'}},
+        ...marks.filter(m => (m.label === 'flip' || m.label.startsWith('spot')) && m.x >= lo && m.x <= hi)
+          .map(m => ({xAxis: m.x, lineStyle: {color: m.c, type: 'dashed', width: 1.2},
+            label: {formatter: m.label, color: m.c, fontSize: 10, position: 'insideEndTop'}})),
+      ]}}]});
+  charts.push(c2);
+
+  const c3 = echarts.init($('c3'));
+  c3.setOption({...base,
+    legend: {textStyle: {color: '#8b93a7'}, top: 0},
+    xAxis: {type: 'category', data: xs, axisLabel: {interval: Math.ceil(xs.length / 24)}},
+    yAxis: [
+      {type: 'value', name: 'OI', nameTextStyle: {color: '#8b93a7'}},
+      {type: 'value', name: 'Vol', nameTextStyle: {color: '#8b93a7'}, splitLine: {show: false}},
+    ],
+    series: [
+      {name: 'Call OI', type: 'bar', data: coi, itemStyle: {color: 'rgba(38,166,154,0.75)'}, barGap: '10%'},
+      {name: 'Put OI', type: 'bar', data: poi, itemStyle: {color: 'rgba(239,83,80,0.75)'}},
+      {name: 'Volume', type: 'line', yAxisIndex: 1, data: vol, symbol: 'none', lineStyle: {color: '#4c8dff', width: 1.5}},
+    ]});
+  charts.push(c3);
+
+  window.addEventListener('resize', () => charts.forEach(c => c.resize()));
+}
+
+document.querySelectorAll('[data-dte]').forEach(b => b.addEventListener('click', () => {
+  document.querySelectorAll('[data-dte]').forEach(x => x.classList.remove('active'));
+  b.classList.add('active');
+  maxDte = +b.dataset.dte;
+  load(true);
+}));
+$('refresh').addEventListener('click', () => load(true));
+load(false);
+setInterval(() => { if (!document.hidden) load(false); }, 5 * 60 * 1000);
+</script>
+</body>
+</html>
