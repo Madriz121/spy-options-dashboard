@@ -8,6 +8,7 @@ from fastapi.staticfiles import StaticFiles
 
 import analytics
 import cboe
+import prices
 
 app = FastAPI(title="SPY Options Dashboard")
 
@@ -23,6 +24,20 @@ def index():
 @app.get("/health")
 def health():
     return {"ok": True, "ts": time.time()}
+
+
+@app.get("/api/intraday")
+def intraday(
+    symbol: str = Query("SPY", max_length=10),
+    refresh: bool = Query(False),
+):
+    """5-minute candles for the current/last session."""
+    try:
+        if refresh:
+            prices.clear_cache()
+        return JSONResponse(prices.fetch_intraday(symbol, ttl=300))
+    except Exception as e:
+        return JSONResponse({"error": f"{type(e).__name__}: {e}"}, status_code=502)
 
 
 @app.get("/api/gex")
