@@ -20,6 +20,10 @@
   .btn { background:#1a2130; color:var(--txt); border:1px solid var(--line); border-radius:8px; padding:7px 12px; font-size:13px; cursor:pointer; }
   .btn:hover { border-color:var(--blue); }
   .btn.active { background:#24406e; border-color:var(--blue); }
+  .tickers { display:flex; gap:0; }
+  .tickers .btn { border-radius:0; margin-left:-1px; }
+  .tickers .btn:first-child { border-radius:8px 0 0 8px; margin-left:0; }
+  .tickers .btn:last-child { border-radius:0 8px 8px 0; }
   main { padding:16px 18px 40px; max-width:1280px; margin:0 auto; }
   .cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; margin-bottom:16px; }
   .card { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:10px 12px; }
@@ -37,8 +41,12 @@
 </head>
 <body>
 <header>
-  <h1>SPY Options Dashboard</h1>
+  <h1 id="title">SPY Options Dashboard</h1>
+  <span class="tickers">
+    <button class="btn tick active" data-sym="SPY">SPY</button><button class="btn tick" data-sym="QQQ">QQQ</button><button class="btn tick" data-sym="IWM">IWM</button><button class="btn tick" data-sym="DIA">DIA</button>
+  </span>
   <span class="pill">Spot <b id="spot">–</b></span>
+  <span class="pill">Exp move <b id="expMove">–</b></span>
   <span class="pill" id="gexPill">Net GEX <b id="netgex">–</b></span>
   <span class="pill" id="regimePill">Regime <b id="regime">–</b></span>
   <span class="pill">P/C vol <b id="pcvol">–</b></span>
@@ -71,12 +79,12 @@ const $ = id => document.getElementById(id);
 const BN = 1e9;
 const fmtB = v => (v >= 0 ? '' : '−') + '$' + Math.abs(v / BN).toFixed(2) + 'B';
 const fmtN = v => v == null ? '–' : Number(v).toLocaleString(undefined, {maximumFractionDigits: 0});
-let maxDte = 7, charts = [];
+let maxDte = 7, symbol = 'SPY', charts = [];
 
 async function load(manual) {
   $('err').style.display = 'none';
   try {
-    const r = await fetch(`/api/gex?symbol=SPY&max_dte=${maxDte}${manual ? '&refresh=true' : ''}`);
+    const r = await fetch(`/api/gex?symbol=${symbol}&max_dte=${maxDte}${manual ? '&refresh=true' : ''}`);
     const d = await r.json();
     if (d.error) throw new Error(d.error);
     render(d);
@@ -94,7 +102,11 @@ function card(k, v, s, tip) {
 function render(d) {
   $('loading').style.display = 'none';
   $('dash').style.display = 'block';
+  $('title').textContent = d.symbol + ' Options Dashboard';
+  document.title = d.symbol + ' Options Dashboard — GEX, DEX, Key Levels';
   $('spot').textContent = '$' + d.spot.toFixed(2);
+  const em = d.expected_move;
+  $('expMove').textContent = em ? '±$' + em.dollars.toFixed(2) + ' (' + em.pct.toFixed(2) + '%)' : '–';
   $('netgex').textContent = fmtB(d.totals.net_gex_bn * BN);
   $('regime').textContent = d.totals.regime;
   $('pcvol').textContent = d.totals.put_call_vol ?? '–';
@@ -111,7 +123,8 @@ function render(d) {
     card('Max pain', '$' + L.max_pain, 'expiry magnet', 'Strike that minimizes total payout to option holders at expiry. Price often gravitates here into expiration.') +
     card('Net DEX', fmtB(T.net_dex_bn * BN), 'delta exposure', 'Aggregate dealer delta exposure. Large positive = dealers long delta (supportive); large negative = dealers short delta (heavy).') +
     card('Top OI strikes', L.top_oi.map(s => '$' + s).join(', '), 'heaviest positioning', 'Strikes with the most open interest — expect reactions and possible pinning near expiry.') +
-    card('Top volume', L.top_vol.map(s => '$' + s).join(', '), "today's flow", "Strikes with the most contracts traded today — where today's positioning is happening.");
+    card('Top volume', L.top_vol.map(s => '$' + s).join(', '), "today's flow", "Strikes with the most contracts traded today — where today's positioning is happening.") +
+    card('Hot strikes', d.unusual_volume.length ? d.unusual_volume.slice(0, 4).map(h => '$' + h.strike + ' ' + h.ratio + '×').join(', ') : '–', 'volume ≥ 2× OI', 'Strikes where today\u2019s volume is at least double the open interest — fresh positioning being built, not old inventory.');
 
   // chart data: strikes within ±12% of spot (walls live near spot)
   const lo = d.spot * 0.88, hi = d.spot * 1.12;
@@ -153,7 +166,10 @@ function render(d) {
       {name: 'Call GEX', type: 'bar', data: cg, itemStyle: {color: '#26a69a'}, barGap: '10%'},
       {name: 'Put GEX', type: 'bar', data: pg, itemStyle: {color: '#ef5350'}},
       {name: 'Net GEX', type: 'line', data: ng, symbol: 'none', lineStyle: {color: '#e8eaf0', width: 1.5},
-       markLine: {silent: true, symbol: 'none', data: markLines}},
+       markLine: {silent: true, symbol: 'none', data: markLines},
+       ...(em && em.lower >= lo && em.upper <= hi ? {markArea: {silent: true,
+         itemStyle: {color: 'rgba(76,141,255,0.10)'},
+         data: [[{xAxis: em.lower, label: {formatter: 'exp move', color: '#4c8dff', fontSize: 10}}, {xAxis: em.upper}]]}} : {})},
     ]});
   charts.push(c1);
 
@@ -190,6 +206,12 @@ function render(d) {
   window.addEventListener('resize', () => charts.forEach(c => c.resize()));
 }
 
+document.querySelectorAll('[data-sym]').forEach(b => b.addEventListener('click', () => {
+  document.querySelectorAll('[data-sym]').forEach(x => x.classList.remove('active'));
+  b.classList.add('active');
+  symbol = b.dataset.sym;
+  load(true);
+}));
 document.querySelectorAll('[data-dte]').forEach(b => b.addEventListener('click', () => {
   document.querySelectorAll('[data-dte]').forEach(x => x.classList.remove('active'));
   b.classList.add('active');

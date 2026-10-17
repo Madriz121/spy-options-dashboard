@@ -76,6 +76,8 @@ def analyze(payload: dict, max_dte: int = 9999) -> dict:
     strikes: dict = {}
     expirations: dict = {}
     latest_trade = None
+    # (expiry, strike, is_call) -> (bid, ask, theo, last) for expected-move calc
+    quotes: dict = {}
 
     for c in payload.get("options", []):
         parsed = parse_option_symbol(c.get("option"))
@@ -118,6 +120,21 @@ def analyze(payload: dict, max_dte: int = 9999) -> dict:
         gex = sign * gamma * oi * 100 * spot * spot * 0.01
         dex = sign * delta * oi * 100 * spot
 
+        try:
+            bid = float(c.get("bid") or 0)
+            ask = float(c.get("ask") or 0)
+        except (TypeError, ValueError):
+            bid = ask = 0.0
+        try:
+            theo = float(c.get("theo") or 0)
+        except (TypeError, ValueError):
+            theo = 0.0
+        try:
+            last = float(c.get("last_trade_price") or 0)
+        except (TypeError, ValueError):
+            last = 0.0
+        quotes[(str(expiry), strike, is_call)] = (bid, ask, theo, last)
+
         s = strikes.setdefault(strike, {
             "strike": strike, "call_gex": 0.0, "put_gex": 0.0,
             "call_dex": 0.0, "put_dex": 0.0,
@@ -152,6 +169,8 @@ def analyze(payload: dict, max_dte: int = 9999) -> dict:
 
     levels = _key_levels(rows, spot)
     totals = _totals(rows)
+    exp_move = _expected_move(quotes, expirations, spot)
+    unusual = _unusual_volume(rows)
 
     return {
         "spot": round(spot, 2),
@@ -161,10 +180,68 @@ def analyze(payload: dict, max_dte: int = 9999) -> dict:
         "strikes": rows,
         "levels": levels,
         "totals": totals,
+        "expected_move": exp_move,
+        "unusual_volume": unusual,
         "expirations": [
             {"date": d, "dte": expirations[d]} for d in sorted(expirations)
         ],
     }
+
+
+def _mid(bid: float, ask: float, theo: float, last: float) -> float:
+    if bid > 0 and ask > 0:
+        return (bid + ask) / 2
+    return theo or last or 0.0
+
+
+def _expected_move(quotes: dict, expirations: dict, spot: float):
+    """ATM straddle mid-price for the nearest *live* expiry -> dollar expected move."""
+    if not expirations or spot <= 0:
+        return None
+    now = _et_now()
+    live = {
+        d: dte for d, dte in expirations.items()
+        if dte > 0 or (dte == 0 and now.hour < 16)
+    }
+    if not live:
+        return None
+    near = min(live, key=lambda d: live[d])
+    strikes = sorted({k for (d, k, _) in quotes if d == near})
+    if not strikes:
+        return None
+    atm = min(strikes, key=lambda k: abs(k - spot))
+    call = quotes.get((near, atm, True))
+    put = quotes.get((near, atm, False))
+    if not call or not put:
+        return None
+    em = _mid(*call) + _mid(*put)
+    if em <= 0:
+        return None
+    return {
+        "dollars": round(em, 2),
+        "pct": round(em / spot * 100, 2),
+        "expiry": near,
+        "strike": atm,
+        "upper": round(spot + em, 2),
+        "lower": round(spot - em, 2),
+    }
+
+
+def _unusual_volume(rows: list) -> list:
+    """Strikes where today's volume >= 2x open interest (min 500 contracts)."""
+    hot = []
+    for s in rows:
+        if s["total_vol"] >= 500 and s["total_oi"] > 0:
+            ratio = s["total_vol"] / s["total_oi"]
+            if ratio >= 2.0:
+                hot.append({
+                    "strike": s["strike"],
+                    "volume": int(s["total_vol"]),
+                    "oi": int(s["total_oi"]),
+                    "ratio": round(ratio, 1),
+                })
+    hot.sort(key=lambda h: h["ratio"], reverse=True)
+    return hot[:8]
 
 
 def _key_levels(rows: list, spot: float) -> dict:
