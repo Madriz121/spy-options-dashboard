@@ -39,6 +39,14 @@
   #tabs .btn { border-radius:0; margin-left:-1px; }
   #tabs .btn:first-child { border-radius:8px 0 0 8px; margin-left:0; }
   #tabs .btn:last-child { border-radius:0 8px 8px 0; }
+  #mgrid { display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:12px; }
+  .mxpanel { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:10px; }
+  .mxpanel h3 { margin:0 0 2px; font-size:14px; font-weight:650; }
+  .mxpanel h3 span { color:var(--dim); font-weight:400; font-size:12px; }
+  .mxexp { font-size:11px; color:var(--dim); margin-bottom:8px; }
+  .mxrow { display:flex; justify-content:space-between; padding:3px 8px; border-radius:4px; font-size:12px; margin-bottom:2px; font-variant-numeric:tabular-nums; }
+  .mxrow.extreme { color:#141414; font-weight:700; }
+  .mxrow.spotrow { outline:1px solid #e8eaf0; outline-offset:-1px; }
   footer { color:var(--dim); font-size:11px; text-align:center; padding:20px; }
   #loading { text-align:center; color:var(--dim); padding:60px 0; font-size:14px; }
 </style>
@@ -62,7 +70,7 @@
   <button class="btn" id="refresh">↻ Refresh</button>
 </header>
 <nav id="tabs">
-  <button class="btn tab active" data-tab="levels">GEX Levels</button><button class="btn tab" data-tab="price">Price + Heatmap</button>
+  <button class="btn tab active" data-tab="levels">GEX Levels</button><button class="btn tab" data-tab="price">Price + Heatmap</button><button class="btn tab" data-tab="matrix">Matrix</button>
 </nav>
 <main>
   <div id="err"></div>
@@ -87,6 +95,13 @@
       <div class="chart"><h2 id="ptitle">Price vs GEX heatmap</h2>
         <p class="hint">5-minute candles over today's GEX heatmap. Each band is one strike — green = call-heavy (dealer supply overhead), red = put-heavy (dealer demand below). Brightness = exposure size; the 6 heaviest strikes are labeled. Dashed lines: key levels.</p>
         <div class="box" id="c4" style="height:520px"></div></div>
+    </div>
+  </div>
+  <div id="tab-matrix" style="display:none">
+    <div id="mloading" style="text-align:center;color:var(--dim);padding:60px 0;font-size:14px">Loading GEX matrix…</div>
+    <div id="mwrap" style="display:none">
+      <p class="hint" style="font-size:12px;color:var(--dim);margin:0 0 10px">Per-strike net GEX for the nearest expiry, all tickers side by side. Purple = positive gamma, teal = negative gamma, brighter = heavier. Yellow rows are the heaviest positive/negative strikes; the outlined row is spot.</p>
+      <div id="mgrid"></div>
     </div>
   </div>
 </main>
@@ -239,7 +254,65 @@ $('refresh').addEventListener('click', () => reload(true));
 load(false);
 setInterval(() => { if (!document.hidden) reload(false); }, 5 * 60 * 1000);
 
-function reload(manual){ activeTab === 'price' ? loadPrice(manual) : load(manual); }
+function reload(manual){
+  if (activeTab === 'price') loadPrice(manual);
+  else if (activeTab === 'matrix') loadMatrix(manual);
+  else load(manual);
+}
+
+// ---- Matrix tab ----
+const MATRIX_TICKERS = ['SPY', 'QQQ', 'IWM', 'DIA'];
+async function loadMatrix(manual) {
+  $('err').style.display = 'none';
+  try {
+    const panels = await Promise.all(MATRIX_TICKERS.map(async t => {
+      const meta = await fetch(`/api/gex?symbol=${t}&max_dte=7`).then(r => r.json());
+      if (meta.error || !meta.expirations || !meta.expirations.length) return {t, err: true};
+      const exp = meta.expirations[0].date;
+      const d = await fetch(`/api/gex?symbol=${t}&expiry=${exp}${manual ? '&refresh=true' : ''}`).then(r => r.json());
+      if (d.error) return {t, err: true};
+      return {t, d, exp};
+    }));
+    renderMatrix(panels);
+  } catch (e) {
+    $('mloading').textContent = 'Could not load matrix: ' + e.message;
+  }
+}
+
+function renderMatrix(panels) {
+  $('mloading').style.display = 'none';
+  const wrap = $('mgrid');
+  let html = '';
+  panels.forEach(({t, d, exp, err}) => {
+    if (err || !d) { html += `<div class="mxpanel"><h3>${t}</h3><div class="mxexp">failed to load</div></div>`; return; }
+    const spot = d.spot;
+    const rows = d.strikes
+      .filter(s => Math.abs(s.strike - spot) / spot <= 0.04 && s.net_gex !== 0)
+      .sort((a, b) => b.strike - a.strike)
+      .slice(0, 44);
+    if (!rows.length) { html += `<div class="mxpanel"><h3>${t}</h3><div class="mxexp">no data</div></div>`; return; }
+    const maxAbs = Math.max(...rows.map(s => Math.abs(s.net_gex)), 1);
+    const maxPos = rows.reduce((a, b) => a.net_gex > b.net_gex ? a : b);
+    const maxNeg = rows.reduce((a, b) => a.net_gex < b.net_gex ? a : b);
+    const spotRow = rows.reduce((a, b) => Math.abs(b.strike - spot) < Math.abs(a.strike - spot) ? b : a);
+    html += `<div class="mxpanel"><h3>${t} <span>${spot.toFixed(2)}</span></h3>` +
+      `<div class="mxexp">${exp} · net ${fmtB(d.totals.net_gex_bn * BN)}</div><div>`;
+    rows.forEach(s => {
+      const n = Math.abs(s.net_gex) / maxAbs;
+      let bg, cls = 'mxrow';
+      if (s === maxPos || s === maxNeg) { bg = '#f5c542'; cls += ' extreme'; }
+      else if (s.net_gex >= 0) bg = 'rgba(190,90,255,' + (0.12 + 0.60 * n).toFixed(3) + ')';
+      else bg = 'rgba(20,190,190,' + (0.12 + 0.60 * n).toFixed(3) + ')';
+      if (s === spotRow) cls += ' spotrow';
+      const mv = s.net_gex / 1e6;
+      const txt = (mv >= 0 ? '' : '−') + '$' + Math.abs(mv).toFixed(2) + 'M';
+      html += `<div class="${cls}" style="background:${bg}"><span>${s.strike}</span><span>${txt}</span></div>`;
+    });
+    html += `</div></div>`;
+  });
+  wrap.innerHTML = html;
+  $('mwrap').style.display = 'block';
+}
 
 // ---- Price + Heatmap tab ----
 async function loadPrice(manual) {
@@ -330,8 +403,7 @@ document.querySelectorAll('[data-tab]').forEach(b => b.addEventListener('click',
   document.querySelectorAll('[data-tab]').forEach(x => x.classList.remove('active'));
   b.classList.add('active');
   activeTab = b.dataset.tab;
-  $('tab-levels').style.display = activeTab === 'levels' ? 'block' : 'none';
-  $('tab-price').style.display = activeTab === 'price' ? 'block' : 'none';
+  ['levels', 'price', 'matrix'].forEach(n => { $('tab-' + n).style.display = activeTab === n ? 'block' : 'none'; });
   if (activeTab === 'price' && priceChart) priceChart.resize();
   reload(false);
 }));

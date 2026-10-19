@@ -68,7 +68,7 @@ def _t_years(expiry) -> float:
     return max(secs, 60) / (365.0 * 24 * 3600)
 
 
-def analyze(payload: dict, max_dte: int = 9999) -> dict:
+def analyze(payload: dict, max_dte: int = 9999, only_expiry: str | None = None) -> dict:
     spot = float(payload.get("current_price") or 0)
     if spot <= 0:
         raise ValueError("no spot price in CBOE payload")
@@ -86,6 +86,8 @@ def analyze(payload: dict, max_dte: int = 9999) -> dict:
         expiry, is_call, strike = parsed
         dte = dte_of(expiry)
         if dte < 0 or dte > max_dte:
+            continue
+        if only_expiry and expiry.isoformat() != only_expiry:
             continue
         expirations[str(expiry)] = dte
 
