@@ -45,6 +45,7 @@ def gex(
     symbol: str = Query("SPY", max_length=10),
     max_dte: int = Query(9999, ge=0, le=9999),
     expiry: str | None = Query(None, description="Single expiry YYYY-MM-DD"),
+    fridays: bool = Query(False, description="Only Friday expiries"),
     refresh: bool = Query(False),
 ):
     """GEX/DEX profile + key levels. Cached 5 min unless refresh=true."""
@@ -52,10 +53,12 @@ def gex(
         if refresh:
             cboe.clear_cache()
         payload = cboe.fetch_chain(symbol, ttl=300)
-        result = analytics.analyze(payload, max_dte=max_dte, only_expiry=expiry)
+        result = analytics.analyze(payload, max_dte=max_dte, only_expiry=expiry,
+                                   only_fridays=fridays)
         result["symbol"] = symbol.upper()
         result["max_dte"] = max_dte
         result["expiry"] = expiry
+        result["fridays"] = fridays
         return JSONResponse(result)
     except Exception as e:  # keep the UI alive with a clear error
         return JSONResponse({"error": f"{type(e).__name__}: {e}"}, status_code=502)

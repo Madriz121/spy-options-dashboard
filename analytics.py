@@ -68,13 +68,15 @@ def _t_years(expiry) -> float:
     return max(secs, 60) / (365.0 * 24 * 3600)
 
 
-def analyze(payload: dict, max_dte: int = 9999, only_expiry: str | None = None) -> dict:
+def analyze(payload: dict, max_dte: int = 9999, only_expiry: str | None = None,
+            only_fridays: bool = False) -> dict:
     spot = float(payload.get("current_price") or 0)
     if spot <= 0:
         raise ValueError("no spot price in CBOE payload")
 
     strikes: dict = {}
     expirations: dict = {}
+    all_expirations: dict = {}
     latest_trade = None
     # (expiry, strike, is_call) -> (bid, ask, theo, last) for expected-move calc
     quotes: dict = {}
@@ -85,9 +87,14 @@ def analyze(payload: dict, max_dte: int = 9999, only_expiry: str | None = None) 
             continue
         expiry, is_call, strike = parsed
         dte = dte_of(expiry)
-        if dte < 0 or dte > max_dte:
+        if dte < 0:
+            continue
+        all_expirations[str(expiry)] = dte
+        if dte > max_dte:
             continue
         if only_expiry and expiry.isoformat() != only_expiry:
+            continue
+        if only_fridays and expiry.weekday() != 4:  # Friday expiries only
             continue
         expirations[str(expiry)] = dte
 
@@ -186,6 +193,9 @@ def analyze(payload: dict, max_dte: int = 9999, only_expiry: str | None = None) 
         "unusual_volume": unusual,
         "expirations": [
             {"date": d, "dte": expirations[d]} for d in sorted(expirations)
+        ],
+        "all_expirations": [
+            {"date": d, "dte": all_expirations[d]} for d in sorted(all_expirations)
         ],
     }
 
