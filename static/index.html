@@ -306,13 +306,32 @@ function reload(manual){
 
 // ---- Matrix tab ----
 const MATRIX_TICKERS = ['SPY', 'QQQ', 'IWM', 'DIA'];
+
+// Which expiry a Matrix panel shows: the globally selected single expiry if
+// the ticker has it (else its next expiry after that date), the nearest
+// Friday in Fridays mode, otherwise the ticker's nearest expiry.
+function pickMatrixExpiry(list) {
+  if (singleExpiry) {
+    const hit = list.find(e => e.date === singleExpiry);
+    if (hit) return hit.date;
+    const after = list.find(e => e.date > singleExpiry);
+    return (after || list[list.length - 1]).date;
+  }
+  if (fridaysOnly) {
+    const fri = list.find(e => e.dte <= 35 && new Date(e.date + 'T12:00:00').getDay() === 5);
+    if (fri) return fri.date;
+  }
+  return list[0].date;
+}
+
 async function loadMatrix(manual) {
   $('err').style.display = 'none';
   try {
     const panels = await Promise.all(MATRIX_TICKERS.map(async t => {
-      const meta = await fetch(`/api/gex?symbol=${t}&max_dte=7`).then(r => r.json());
-      if (meta.error || !meta.expirations || !meta.expirations.length) return {t, err: true};
-      const exp = meta.expirations[0].date;
+      const meta = await fetch(`/api/gex?symbol=${t}&max_dte=9999`).then(r => r.json());
+      const list = meta.all_expirations || meta.expirations;
+      if (meta.error || !list || !list.length) return {t, err: true};
+      const exp = pickMatrixExpiry(list);
       const d = await fetch(`/api/gex?symbol=${t}&expiry=${exp}${manual ? '&refresh=true' : ''}`).then(r => r.json());
       if (d.error) return {t, err: true};
       return {t, d, exp};
