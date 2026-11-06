@@ -101,7 +101,7 @@
     <div id="ploading" style="text-align:center;color:var(--dim);padding:60px 0;font-size:14px">Loading price chart…</div>
     <div id="pwrap" style="display:none">
       <div class="chart"><h2 id="ptitle">Price vs GEX heatmap</h2>
-        <p class="hint">5-minute candles over today's GEX heatmap. Each band is one strike — green = call-heavy (dealer supply overhead), red = put-heavy (dealer demand below). Brightness = exposure size; the 6 heaviest strikes are labeled. Dashed lines: key levels.</p>
+        <p class="hint">5-minute candles over today's GEX heatmap. Bands group nearby strikes — green = call-heavy (dealer supply overhead), red = put-heavy (dealer demand below). Brightness = exposure size; the 6 heaviest bands are labeled. Dashed lines: key levels.</p>
         <div class="box" id="c4" style="height:520px"></div></div>
     </div>
   </div>
@@ -409,25 +409,40 @@ function renderPrice(p, g) {
   const times = bars.map(b => b.t);
   const data = bars.map(b => [b.o, b.c, b.l, b.h]);
   const loP = Math.min(...bars.map(b => b.l)), hiP = Math.max(...bars.map(b => b.h));
+  const spot = g.spot;
+  // Zoomed-out window: at least ±2.5% around spot, expanded if the day moved more.
+  const yMin = Math.min(loP * 0.999, spot * 0.975);
+  const yMax = Math.max(hiP * 1.001, spot * 1.025);
 
-  const rows = g.strikes.filter(s => s.strike >= loP * 0.99 && s.strike <= hiP * 1.01 && s.net_gex !== 0);
+  // Group strikes into ~14 readable bands across the visible window instead
+  // of one hairline band per $1 strike.
+  const rows = g.strikes.filter(s => s.strike >= yMin && s.strike <= yMax && s.net_gex !== 0);
   const step = rows.length > 1
     ? Math.min(...rows.slice(1).map((s, i) => s.strike - rows[i].strike).filter(x => x > 0))
     : 1;
-  const maxAbs = Math.max(...rows.map(s => Math.abs(s.net_gex)), 1);
-  const topStrikes = new Set([...rows]
+  const bucket = Math.ceil(Math.max(step, (yMax - yMin) / 14) / step) * step;
+  const buckets = new Map();
+  rows.forEach(s => {
+    const k = Math.round(s.strike / bucket);
+    const b = buckets.get(k) || {strike: k * bucket, net_gex: 0};
+    b.net_gex += s.net_gex;
+    buckets.set(k, b);
+  });
+  const bands = [...buckets.values()].sort((a, b) => a.strike - b.strike);
+  const maxAbs = Math.max(...bands.map(s => Math.abs(s.net_gex)), 1);
+  const topStrikes = new Set([...bands]
     .sort((a, b) => Math.abs(b.net_gex) - Math.abs(a.net_gex))
     .slice(0, 6).map(s => s.strike));
-  const areas = rows.map(s => {
-    const inten = Math.min(0.42, 0.05 + 0.37 * Math.abs(s.net_gex) / maxAbs);
+  const areas = bands.map(s => {
+    const inten = Math.min(0.30, 0.04 + 0.26 * Math.abs(s.net_gex) / maxAbs);
     const col = s.net_gex >= 0
       ? 'rgba(38,166,154,' + inten.toFixed(3) + ')'
       : 'rgba(239,83,80,' + inten.toFixed(3) + ')';
-    const first = {yAxis: s.strike - step / 2, itemStyle: {color: col}};
+    const first = {yAxis: s.strike - bucket / 2, itemStyle: {color: col}};
     if (topStrikes.has(s.strike)) {
       first.label = {formatter: '$' + s.strike, color: '#aab3c5', fontSize: 9, position: 'insideRight'};
     }
-    return [first, {yAxis: s.strike + step / 2}];
+    return [first, {yAxis: s.strike + bucket / 2}];
   });
 
   const L = g.levels, em = g.expected_move;
@@ -438,7 +453,7 @@ function renderPrice(p, g) {
   ];
   if (L.gamma_flip != null) ymarks.push({y: L.gamma_flip, c: '#f5c542', label: 'flip'});
   if (em) { ymarks.push({y: em.upper, c: '#4c8dff', label: 'exp hi'}); ymarks.push({y: em.lower, c: '#4c8dff', label: 'exp lo'}); }
-  const markLines = ymarks.filter(m => m.y >= loP * 0.995 && m.y <= hiP * 1.005).map(m => ({
+  const markLines = ymarks.filter(m => m.y >= yMin && m.y <= yMax).map(m => ({
     yAxis: m.y, lineStyle: {color: m.c, type: 'dashed', width: 1.2},
     label: {formatter: m.label, color: m.c, fontSize: 10, position: 'insideEndTop'}
   }));
@@ -457,7 +472,7 @@ function renderPrice(p, g) {
           '<br>Vol ' + Number(b.v).toLocaleString();
       }},
     xAxis: {type: 'category', data: times, axisLabel: {interval: Math.ceil(times.length / 16)}},
-    yAxis: {type: 'value', scale: true, nameTextStyle: {color: '#8b93a7'}},
+    yAxis: {type: 'value', min: yMin, max: yMax, nameTextStyle: {color: '#8b93a7'}},
     series: [{
       name: p.symbol, type: 'candlestick', data,
       itemStyle: {color: '#26a69a', color0: '#ef5350', borderColor: '#26a69a', borderColor0: '#ef5350'},
