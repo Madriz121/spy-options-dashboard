@@ -61,7 +61,7 @@
 <header>
   <h1 id="title">SPY Options Dashboard</h1>
   <span class="tickers">
-    <button class="btn tick active" data-sym="SPY">SPY</button><button class="btn tick" data-sym="QQQ">QQQ</button><button class="btn tick" data-sym="IWM">IWM</button><button class="btn tick" data-sym="DIA">DIA</button>
+    <button class="btn tick active" data-sym="SPY">SPY</button><button class="btn tick" data-sym="QQQ">QQQ</button><button class="btn tick" data-sym="IWM">IWM</button><button class="btn tick" data-sym="DIA">DIA</button><button class="btn tick" data-sym="TSLA">TSLA</button><button class="btn tick" data-sym="NVDA">NVDA</button>
   </span>
   <span class="pill">Spot <b id="spot">–</b></span>
   <span class="pill">Exp move <b id="expMove">–</b></span>
@@ -305,7 +305,7 @@ function reload(manual){
 }
 
 // ---- Matrix tab ----
-const MATRIX_TICKERS = ['SPY', 'QQQ', 'IWM', 'DIA'];
+const MATRIX_TICKERS = ['SPY', 'QQQ', 'IWM', 'DIA', 'TSLA', 'NVDA'];
 
 // Which expiry a Matrix panel shows: the globally selected single expiry if
 // the ticker has it (else its next expiry after that date), the nearest
