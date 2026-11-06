@@ -99,6 +99,41 @@ def fetch_news(ttl: int = 900) -> dict:
     if not items:
         raise RuntimeError("no news feeds reachable")
 
+    payload = _build(items, cap=40)
+    _cache["news"] = (now, payload)
+    return payload
+
+
+def fetch_ticker_news(symbol: str, ttl: int = 900) -> dict:
+    """News about one ticker: Google News search + Yahoo quote feed."""
+    symbol = symbol.upper()
+    now = time.time()
+    key = ("ticker", symbol)
+    hit = _cache.get(key)
+    if hit and now - hit[0] < ttl:
+        return hit[1]
+
+    feeds = [
+        ("Google News", f"https://news.google.com/rss/search?q={symbol}%20stock&hl=en-US&gl=US&ceid=US:en"),
+        ("Yahoo Finance", f"https://feeds.finance.yahoo.com/rss/2.0/headline?s={symbol}&region=US&lang=en-US"),
+    ]
+    items = []
+    for source, url in feeds:
+        try:
+            items.extend(_fetch_feed(source, url))
+        except Exception:
+            continue
+    if not items:
+        raise RuntimeError(f"no news for {symbol}")
+    payload = _build(items, cap=25, symbol=symbol)
+    _cache[key] = (now, payload)
+    return payload
+
+
+_OCC_RE = re.compile(r"\d{6}[CP]\d{8}")  # option-contract spam in symbol searches
+
+
+def _build(items: list, cap: int, symbol: str | None = None) -> dict:
     # Today + yesterday (ET): on weekends this keeps Friday's news in view.
     today = datetime.now(ET_ZONE).date()
     recent = [
@@ -111,6 +146,8 @@ def fetch_news(ttl: int = 900) -> dict:
 
     seen, headlines = set(), []
     for it in pool:
+        if symbol and _OCC_RE.search(it["title"]):
+            continue  # skip option-quote spam, e.g. "SPY261105C00745000"
         key = _norm_title(it["title"])
         if key in seen:
             continue
@@ -124,7 +161,7 @@ def fetch_news(ttl: int = 900) -> dict:
             "score": s,
             "sentiment": "bull" if s > 0 else ("bear" if s < 0 else "neutral"),
         })
-        if len(headlines) >= 40:
+        if len(headlines) >= cap:
             break
 
     bull_score = sum(h["score"] for h in headlines if h["score"] > 0)
@@ -158,7 +195,8 @@ def fetch_news(ttl: int = 900) -> dict:
         "method": "Keyword sentiment on headlines — a lean, not a prediction",
         "headlines": headlines,
     }
-    _cache["news"] = (now, payload)
+    if symbol:
+        payload["symbol"] = symbol
     return payload
 
 

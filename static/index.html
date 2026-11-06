@@ -67,6 +67,8 @@
   .ns { font-size:11px; width:14px; text-align:center; flex:none; }
   .ns.bull { color:#26a69a; } .ns.bear { color:#ef5350; } .ns.neutral { color:var(--dim); }
   .ns-meta { font-size:11px; color:var(--dim); white-space:nowrap; }
+  .news-sec { font-size:14px; font-weight:600; margin:18px 0 4px; }
+  .news-sec .ns { font-size:12px; width:auto; }
   footer { color:var(--dim); font-size:11px; text-align:center; padding:20px; }
   #loading { text-align:center; color:var(--dim); padding:60px 0; font-size:14px; }
 </style>
@@ -331,12 +333,21 @@ const escHtml = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').repl
 async function loadNews(manual) {
   $('err').style.display = 'none';
   try {
-    const d = await fetch(`/api/news${manual ? '?refresh=true' : ''}`).then(r => r.json());
+    const d = await fetch(`/api/news?symbol=${symbol}${manual ? '&refresh=true' : ''}`).then(r => r.json());
     if (d.error) throw new Error(d.error);
     renderNews(d);
   } catch (e) {
     $('nloading').textContent = 'Could not load news: ' + e.message;
   }
+}
+
+function newsList(headlines) {
+  return headlines.map(h => {
+    const mark = h.sentiment === 'bull' ? '▲' : h.sentiment === 'bear' ? '▼' : '–';
+    return `<div class="news-item"><span class="ns ${h.sentiment}">${mark}</span>` +
+      `<a href="${escHtml(h.link)}" target="_blank" rel="noopener">${escHtml(h.title)}</a>` +
+      `<span class="ns-meta">${escHtml(h.source)}${h.time ? ' · ' + escHtml(h.time) : ''}</span></div>`;
+  }).join('');
 }
 
 function renderNews(d) {
@@ -347,12 +358,15 @@ function renderNews(d) {
   v.innerHTML = `<div class="nv-word">${escHtml(d.verdict)} for tomorrow</div>` +
     `<div class="nv-sub">Net score ${d.net >= 0 ? '+' : ''}${d.net} · ${d.counts.bull} bullish vs ${d.counts.bear} bearish of ${d.headline_count} headlines · ${escHtml(d.as_of)}</div>` +
     `<div class="nv-note">${escHtml(d.method)}. ${escHtml(d.window)} — most meaningful after the close.</div>`;
-  $('nlist').innerHTML = d.headlines.map(h => {
-    const mark = h.sentiment === 'bull' ? '▲' : h.sentiment === 'bear' ? '▼' : '–';
-    return `<div class="news-item"><span class="ns ${h.sentiment}">${mark}</span>` +
-      `<a href="${escHtml(h.link)}" target="_blank" rel="noopener">${escHtml(h.title)}</a>` +
-      `<span class="ns-meta">${escHtml(h.source)}${h.time ? ' · ' + escHtml(h.time) : ''}</span></div>`;
-  }).join('');
+  let html = '';
+  const tk = d.ticker;
+  if (tk && tk.headlines.length) {
+    const tcls = tk.verdict.includes('Bullish') ? 'bull' : tk.verdict.includes('Bearish') ? 'bear' : 'neutral';
+    html += `<h2 class="news-sec">${escHtml(tk.symbol)} news <span class="ns ${tcls}">${tk.verdict} (net ${tk.net >= 0 ? '+' : ''}${tk.net})</span></h2>` +
+      newsList(tk.headlines);
+  }
+  html += `<h2 class="news-sec">Market headlines</h2>` + newsList(d.headlines);
+  $('nlist').innerHTML = html;
   $('nwrap').style.display = 'block';
 }
 

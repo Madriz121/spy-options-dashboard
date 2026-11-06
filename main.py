@@ -42,12 +42,21 @@ def intraday(
 
 
 @app.get("/api/news")
-def news(refresh: bool = Query(False)):
-    """EOD market news + keyword sentiment -> tomorrow's bull/bear lean."""
+def news(
+    symbol: str = Query("SPY", max_length=10),
+    refresh: bool = Query(False),
+):
+    """EOD market news + keyword sentiment -> tomorrow's bull/bear lean.
+    Includes a per-ticker section for the viewed symbol."""
     try:
         if refresh:
             news_mod.clear_cache()
-        return JSONResponse(news_mod.fetch_news(ttl=900))
+        payload = news_mod.fetch_news(ttl=900)
+        try:
+            payload["ticker"] = news_mod.fetch_ticker_news(symbol, ttl=900)
+        except Exception:
+            payload["ticker"] = None
+        return JSONResponse(payload)
     except Exception as e:  # keep the UI alive with a clear error
         return JSONResponse({"error": f"{type(e).__name__}: {e}"}, status_code=502)
 
