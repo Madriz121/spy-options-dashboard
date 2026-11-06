@@ -349,17 +349,23 @@ function renderMatrix(panels) {
   panels.forEach(({t, d, exp, err}) => {
     if (err || !d) { html += `<div class="mxpanel"><h3>${t}</h3><div class="mxexp">failed to load</div></div>`; return; }
     const spot = d.spot;
-    const rows = d.strikes
+    const band = d.strikes
       .filter(s => Math.abs(s.strike - spot) / spot <= 0.04 && s.net_gex !== 0)
-      .sort((a, b) => b.strike - a.strike)
-      .slice(0, 44);
+      .sort((a, b) => b.strike - a.strike);
+    // Center the 44-row window on the strike nearest spot (was: top 44 by
+    // strike, which silently dropped the whole lower tail on $1-spaced chains)
+    const spotIdx = band.reduce((best, s, i) =>
+      Math.abs(s.strike - spot) < Math.abs(band[best].strike - spot) ? i : best, 0);
+    const start = Math.max(0, Math.min(spotIdx - 22, band.length - 44));
+    const rows = band.slice(start, start + 44);
+    const truncated = band.length > rows.length;
     if (!rows.length) { html += `<div class="mxpanel"><h3>${t}</h3><div class="mxexp">no data</div></div>`; return; }
     const maxAbs = Math.max(...rows.map(s => Math.abs(s.net_gex)), 1);
     const maxPos = rows.reduce((a, b) => a.net_gex > b.net_gex ? a : b);
     const maxNeg = rows.reduce((a, b) => a.net_gex < b.net_gex ? a : b);
     const spotRow = rows.reduce((a, b) => Math.abs(b.strike - spot) < Math.abs(a.strike - spot) ? b : a);
     html += `<div class="mxpanel"><h3>${t} <span>${spot.toFixed(2)}</span></h3>` +
-      `<div class="mxexp">${exp} · net ${fmtB(d.totals.net_gex_bn * BN)}</div><div>`;
+      `<div class="mxexp">${exp} · net ${fmtB(d.totals.net_gex_bn * BN)}${truncated ? ` · showing ${rows.length} of ${band.length} strikes` : ''}</div><div>`;
     rows.forEach(s => {
       const n = Math.abs(s.net_gex) / maxAbs;
       let bg, cls = 'mxrow';
