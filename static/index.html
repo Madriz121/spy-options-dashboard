@@ -68,16 +68,14 @@
   <span class="pill">Spot <b id="spot">–</b></span>
   <span class="pill">Exp move <b id="expMove">–</b></span>
   <span class="pill" id="gexPill">Net GEX <b id="netgex">–</b></span>
-  <span class="pill" id="regimePill">Regime <b id="regime">–</b></span>
-  <span class="pill">P/C vol <b id="pcvol">–</b></span>
   <span class="pill" style="color:var(--dim)">Updated <b id="updated">–</b></span>
   <span class="spacer"></span>
-  <button class="btn" data-dte="9999">All expiries</button>
-  <button class="btn active" data-dte="7">≤ 7 DTE</button>
+  <button class="btn" data-dte="9999">All</button>
+  <button class="btn active" data-dte="7">≤7D</button>
   <button class="btn" data-dte="0">0DTE</button>
-  <button class="btn" data-dte="fri">Fridays ≤5wk</button>
+  <button class="btn" data-dte="fri">Fridays</button>
   <select id="expirySel" title="View a single expiry"><option value="">Single expiry…</option></select>
-  <button class="btn" id="refresh">↻ Refresh</button>
+  <button class="btn" id="refresh" title="Refresh now">↻</button>
 </header>
 <nav id="tabs">
   <button class="btn tab active" data-tab="levels">GEX Levels</button><button class="btn tab" data-tab="price">Price + Heatmap</button><button class="btn tab" data-tab="matrix">Matrix</button>
@@ -89,13 +87,13 @@
   <div id="dash" style="display:none">
     <div class="cards" id="levels"></div>
     <div class="chart"><h2>Gamma exposure by strike</h2>
-      <p class="hint">Green = call GEX (dealers hedge by selling rallies → resistance). Red = put GEX (dealers hedge by buying dips → support). Dashed lines: spot, walls, flip, max pain.</p>
+      <p class="hint">Green = call GEX (resistance overhead) · Red = put GEX (support below). Dashed lines: spot, walls, flip, max pain.</p>
       <div class="box" id="c1"></div></div>
     <div class="chart"><h2>Cumulative net GEX</h2>
-      <p class="hint">Running total of net GEX from low to high strikes. The gamma-flip is where it crosses zero — above it dealers dampen moves, below it they amplify them.</p>
+      <p class="hint">Running total of net GEX. The flip is where it crosses zero.</p>
       <div class="box" id="c2" style="height:300px"></div></div>
     <div class="chart"><h2>Open interest &amp; volume by strike</h2>
-      <p class="hint">Bars = open interest (positioning, updates daily). Line = today's option volume (intraday flow).</p>
+      <p class="hint">Bars = open interest (updates daily) · Line = today's volume.</p>
       <div class="box" id="c3"></div></div>
   </div>
   </div><!-- /tab-levels -->
@@ -103,7 +101,7 @@
     <div id="ploading" style="text-align:center;color:var(--dim);padding:60px 0;font-size:14px">Loading price chart…</div>
     <div id="pwrap" style="display:none">
       <div class="chart"><h2 id="ptitle">Price vs GEX heatmap</h2>
-        <p class="hint">5-minute candles over today's GEX heatmap. Bands group nearby strikes — green = call-heavy, red = put-heavy. The thick labeled bars are the day's magnets (walls, flip, max pain, expected-move bounds) — where price tends to gravitate. Scroll on the chart to zoom, drag to pan.</p>
+        <p class="hint">Bands group nearby strikes — green call-heavy, red put-heavy. Thick bars are the day's magnets. Scroll to zoom, drag to pan.</p>
         <div class="zoomrow">
           <span>Zoom</span>
           <button class="btn zm" data-zoom="1">±1%</button>
@@ -184,23 +182,18 @@ function render(d) {
   $('spot').textContent = '$' + d.spot.toFixed(2);
   const em = d.expected_move;
   $('expMove').textContent = em ? '±$' + em.dollars.toFixed(2) + ' (' + em.pct.toFixed(2) + '%)' : '–';
-  $('netgex').textContent = fmtB(d.totals.net_gex_bn * BN);
-  $('regime').textContent = d.totals.regime;
-  $('pcvol').textContent = d.totals.put_call_vol ?? '–';
-  $('updated').textContent = d.as_of ? d.as_of.replace('T', ' ').slice(0, 16) + ' ET' : 'just now';
-  const gp = $('gexPill'), rp = $('regimePill');
+  $('netgex').textContent = fmtB(d.totals.net_gex_bn * BN) + ' · ' + d.totals.regime;
+  $('updated').textContent = d.as_of ? d.as_of.slice(11, 16) + ' ET' : 'just now';
+  const gp = $('gexPill');
   gp.className = 'pill ' + (d.totals.net_gex_bn >= 0 ? 'good' : 'bad');
-  rp.className = 'pill ' + (d.totals.net_gex_bn >= 0 ? 'good' : 'bad');
 
-  const L = d.levels, T = d.totals;
+  const L = d.levels;
   $('levels').innerHTML =
     card('Call wall', '$' + L.call_wall, fmtB(L.call_wall_gex * BN) + ' call GEX', 'Strike with the most positive gamma exposure. Dealers hedging short calls sell into rallies — overhead resistance and a magnet into expiry.') +
     card('Put wall', '$' + L.put_wall, fmtB(L.put_wall_gex * BN) + ' put GEX', 'Strike with the most negative gamma exposure. Dealers hedging short puts buy dips — acts as a support floor.') +
     card('Gamma flip', L.gamma_flip == null ? '–' : '$' + L.gamma_flip, 'zero-crossing', 'Price where cumulative GEX crosses zero. Above = positive-gamma regime (calm, mean-reverting). Below = negative-gamma regime (volatile, trending).') +
     card('Max pain', '$' + L.max_pain, 'expiry magnet', 'Strike that minimizes total payout to option holders at expiry. Price often gravitates here into expiration.') +
-    card('Net DEX', fmtB(T.net_dex_bn * BN), 'delta exposure', 'Aggregate dealer delta exposure. Large positive = dealers long delta (supportive); large negative = dealers short delta (heavy).') +
     card('Top OI strikes', L.top_oi.map(s => '$' + s).join(', '), 'heaviest positioning', 'Strikes with the most open interest — expect reactions and possible pinning near expiry.') +
-    card('Top volume', L.top_vol.map(s => '$' + s).join(', '), "today's flow", "Strikes with the most contracts traded today — where today's positioning is happening.") +
     card('Hot strikes', d.unusual_volume.length ? d.unusual_volume.slice(0, 4).map(h => '$' + h.strike + ' ' + h.ratio + '×').join(', ') : '–', 'volume ≥ 2× OI', 'Strikes where today\u2019s volume is at least double the open interest — fresh positioning being built, not old inventory.');
 
   // chart data: strikes within ±12% of spot (walls live near spot)
