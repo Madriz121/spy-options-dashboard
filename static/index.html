@@ -48,6 +48,8 @@
   .mxrow { display:flex; justify-content:space-between; padding:3px 8px; border-radius:4px; font-size:12px; margin-bottom:2px; font-variant-numeric:tabular-nums; }
   .mxrow.extreme { color:#141414; font-weight:700; }
   .mxrow.spotrow { outline:1px solid #e8eaf0; outline-offset:-1px; }
+  .zoomrow { display:flex; gap:6px; align-items:center; margin:0 0 8px; font-size:12px; color:var(--dim); }
+  .zoomrow .btn { padding:4px 10px; font-size:12px; }
   #mxlegend { display:flex; flex-wrap:wrap; gap:8px 18px; align-items:center; font-size:12px; color:var(--dim); margin:0 0 10px; }
   #mxlegend span { display:inline-flex; align-items:center; gap:6px; }
   #mxlegend i { width:14px; height:14px; border-radius:3px; display:inline-block; }
@@ -101,8 +103,15 @@
     <div id="ploading" style="text-align:center;color:var(--dim);padding:60px 0;font-size:14px">Loading price chart…</div>
     <div id="pwrap" style="display:none">
       <div class="chart"><h2 id="ptitle">Price vs GEX heatmap</h2>
-        <p class="hint">5-minute candles over today's GEX heatmap. Bands group nearby strikes — green = call-heavy (dealer supply overhead), red = put-heavy (dealer demand below). Brightness = exposure size; the 6 heaviest bands are labeled. Dashed lines: key levels.</p>
-        <div class="box" id="c4" style="height:520px"></div></div>
+        <p class="hint">5-minute candles over today's GEX heatmap. Bands group nearby strikes — green = call-heavy (dealer supply overhead), red = put-heavy (dealer demand below). Brightness = exposure size; the 6 heaviest bands are labeled. Dashed lines: key levels. Scroll on the chart to zoom, drag to pan.</p>
+        <div class="zoomrow">
+          <span>Zoom</span>
+          <button class="btn zm" data-zoom="1">±1%</button>
+          <button class="btn zm active" data-zoom="2.5">±2.5%</button>
+          <button class="btn zm" data-zoom="5">±5%</button>
+          <button class="btn zm" data-zoom="10">±10%</button>
+        </div>
+        <div class="box" id="c4" style="height:560px"></div></div>
     </div>
   </div>
   <div id="tab-matrix" style="display:none">
@@ -401,6 +410,17 @@ async function loadPrice(manual) {
 }
 
 let priceChart = null;
+let zoomPct = 2.5, priceExtent = 10; // half-window % of spot; extent half-width % of spot
+function zoomRange() {
+  const frac = Math.min(1, zoomPct / priceExtent);
+  return {start: 50 - 50 * frac, end: 50 + 50 * frac};
+}
+function applyZoom(pct) {
+  zoomPct = pct;
+  document.querySelectorAll('[data-zoom]').forEach(x => x.classList.toggle('active', +x.dataset.zoom === pct));
+  const r = zoomRange();
+  if (priceChart) priceChart.dispatchAction({type: 'dataZoom', yAxisIndex: 0, start: r.start, end: r.end});
+}
 function renderPrice(p, g) {
   $('ploading').style.display = 'none';
   $('pwrap').style.display = 'block';
@@ -410,9 +430,11 @@ function renderPrice(p, g) {
   const data = bars.map(b => [b.o, b.c, b.l, b.h]);
   const loP = Math.min(...bars.map(b => b.l)), hiP = Math.max(...bars.map(b => b.h));
   const spot = g.spot;
-  // Zoomed-out window: at least ±2.5% around spot, expanded if the day moved more.
-  const yMin = Math.min(loP * 0.999, spot * 0.975);
-  const yMax = Math.max(hiP * 1.001, spot * 1.025);
+  // Full zoomable range: at least ±10% around spot (symmetric, so zoom
+  // presets stay centered on spot), expanded if the day moved more.
+  const full = Math.max(spot * 0.10, (hiP - loP) * 0.6);
+  const yMin = spot - full, yMax = spot + full;
+  priceExtent = full / spot * 100;
 
   // Group strikes into ~14 readable bands across the visible window instead
   // of one hairline band per $1 strike.
@@ -464,6 +486,7 @@ function renderPrice(p, g) {
     backgroundColor: 'transparent',
     textStyle: {color: '#8b93a7', fontSize: 11},
     grid: {left: 56, right: 70, top: 36, bottom: 30},
+    dataZoom: [{type: 'inside', yAxisIndex: 0, zoomOnMouseWheel: true, moveOnMouseMove: true, filterMode: 'none', ...zoomRange()}],
     tooltip: {trigger: 'axis', backgroundColor: '#1a2130', borderColor: '#1f2635',
       textStyle: {color: '#e8eaf0', fontSize: 12},
       formatter: ps => {
@@ -471,16 +494,20 @@ function renderPrice(p, g) {
         return '<b>' + b.t + ' ET</b><br>O ' + b.o + ' H ' + b.h + '<br>L ' + b.l + ' C ' + b.c +
           '<br>Vol ' + Number(b.v).toLocaleString();
       }},
-    xAxis: {type: 'category', data: times, axisLabel: {interval: Math.ceil(times.length / 16)}},
-    yAxis: {type: 'value', min: yMin, max: yMax, nameTextStyle: {color: '#8b93a7'}},
+    xAxis: {type: 'category', data: times, axisLabel: {interval: Math.ceil(times.length / 16)},
+      splitLine: {show: false}},
+    yAxis: {type: 'value', min: yMin, max: yMax, splitNumber: 6,
+      splitLine: {lineStyle: {color: '#1c2333'}}, axisLabel: {fontSize: 10}},
     series: [{
-      name: p.symbol, type: 'candlestick', data,
+      name: p.symbol, type: 'candlestick', data, barWidth: '60%',
       itemStyle: {color: '#26a69a', color0: '#ef5350', borderColor: '#26a69a', borderColor0: '#ef5350'},
       markArea: {silent: true, data: areas},
       markLine: {silent: true, symbol: 'none', data: markLines},
     }],
   });
 }
+
+document.querySelectorAll('[data-zoom]').forEach(b => b.addEventListener('click', () => applyZoom(+b.dataset.zoom)));
 
 let activeTab = 'levels';
 document.querySelectorAll('[data-tab]').forEach(b => b.addEventListener('click', () => {
