@@ -8,6 +8,7 @@ from fastapi.staticfiles import StaticFiles
 
 import analytics
 import cboe
+import news as news_mod
 import prices
 
 app = FastAPI(title="SPY Options Dashboard")
@@ -37,6 +38,17 @@ def intraday(
             prices.clear_cache()
         return JSONResponse(prices.fetch_intraday(symbol, ttl=300))
     except Exception as e:
+        return JSONResponse({"error": f"{type(e).__name__}: {e}"}, status_code=502)
+
+
+@app.get("/api/news")
+def news(refresh: bool = Query(False)):
+    """EOD market news + keyword sentiment -> tomorrow's bull/bear lean."""
+    try:
+        if refresh:
+            news_mod.clear_cache()
+        return JSONResponse(news_mod.fetch_news(ttl=900))
+    except Exception as e:  # keep the UI alive with a clear error
         return JSONResponse({"error": f"{type(e).__name__}: {e}"}, status_code=502)
 
 
