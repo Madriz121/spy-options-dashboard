@@ -103,7 +103,7 @@
     <div id="ploading" style="text-align:center;color:var(--dim);padding:60px 0;font-size:14px">Loading price chart…</div>
     <div id="pwrap" style="display:none">
       <div class="chart"><h2 id="ptitle">Price vs GEX heatmap</h2>
-        <p class="hint">5-minute candles over today's GEX heatmap. Bands group nearby strikes — green = call-heavy (dealer supply overhead), red = put-heavy (dealer demand below). Brightness = exposure size; the 6 heaviest bands are labeled. Dashed lines: key levels. Scroll on the chart to zoom, drag to pan.</p>
+        <p class="hint">5-minute candles over today's GEX heatmap. Bands group nearby strikes — green = call-heavy, red = put-heavy. The thick labeled bars are the day's magnets (walls, flip, max pain, expected-move bounds) — where price tends to gravitate. Scroll on the chart to zoom, drag to pan.</p>
         <div class="zoomrow">
           <span>Zoom</span>
           <button class="btn zm" data-zoom="1">±1%</button>
@@ -452,33 +452,45 @@ function renderPrice(p, g) {
   });
   const bands = [...buckets.values()].sort((a, b) => a.strike - b.strike);
   const maxAbs = Math.max(...bands.map(s => Math.abs(s.net_gex)), 1);
-  const topStrikes = new Set([...bands]
-    .sort((a, b) => Math.abs(b.net_gex) - Math.abs(a.net_gex))
-    .slice(0, 6).map(s => s.strike));
   const areas = bands.map(s => {
     const inten = Math.min(0.30, 0.04 + 0.26 * Math.abs(s.net_gex) / maxAbs);
     const col = s.net_gex >= 0
       ? 'rgba(38,166,154,' + inten.toFixed(3) + ')'
       : 'rgba(239,83,80,' + inten.toFixed(3) + ')';
-    const first = {yAxis: s.strike - bucket / 2, itemStyle: {color: col}};
-    if (topStrikes.has(s.strike)) {
-      first.label = {formatter: '$' + s.strike, color: '#aab3c5', fontSize: 9, position: 'insideRight'};
-    }
-    return [first, {yAxis: s.strike + bucket / 2}];
+    return [{yAxis: s.strike - bucket / 2, itemStyle: {color: col}},
+            {yAxis: s.strike + bucket / 2}];
   });
 
+  // Magnet bars: thick labeled zones at the levels price gravitates toward
+  // for the day — replaces the old dashed lines.
   const L = g.levels, em = g.expected_move;
-  const ymarks = [
-    {y: L.call_wall, c: '#26a69a', label: 'call wall'},
-    {y: L.put_wall, c: '#ef5350', label: 'put wall'},
-    {y: L.max_pain, c: '#4c8dff', label: 'max pain'},
-  ];
-  if (L.gamma_flip != null) ymarks.push({y: L.gamma_flip, c: '#f5c542', label: 'flip'});
-  if (em) { ymarks.push({y: em.upper, c: '#4c8dff', label: 'exp hi'}); ymarks.push({y: em.lower, c: '#4c8dff', label: 'exp lo'}); }
-  const markLines = ymarks.filter(m => m.y >= yMin && m.y <= yMax).map(m => ({
-    yAxis: m.y, lineStyle: {color: m.c, type: 'dashed', width: 1.2},
-    label: {formatter: m.label, color: m.c, fontSize: 10, position: 'insideEndTop'}
-  }));
+  const half = Math.max(spot * 0.001, bucket * 0.12);
+  const magnets = [
+    {y: L.call_wall, label: 'CALL WALL', c: 'rgba(38,166,154,0.42)'},
+    {y: L.put_wall, label: 'PUT WALL', c: 'rgba(239,83,80,0.42)'},
+    ...(L.gamma_flip != null ? [{y: L.gamma_flip, label: 'FLIP', c: 'rgba(245,197,66,0.42)'}] : []),
+    {y: L.max_pain, label: 'MAX PAIN', c: 'rgba(76,141,255,0.42)'},
+    ...(em ? [{y: em.upper, label: 'EXP HI', c: 'rgba(76,141,255,0.32)'},
+              {y: em.lower, label: 'EXP LO', c: 'rgba(76,141,255,0.32)'}] : []),
+  ].filter(m => m.y != null && m.y >= yMin && m.y <= yMax);
+  // Merge magnets that sit within one bar height of each other (e.g. both
+  // walls on the same strike) so their labels don't collide.
+  const merged = [];
+  magnets.sort((a, b) => a.y - b.y);
+  magnets.forEach(m => {
+    const last = merged[merged.length - 1];
+    if (last && Math.abs(m.y - last.y) <= half * 2) {
+      last.label += ' / ' + m.label;
+      last.y = (last.y + m.y) / 2;
+    } else merged.push({...m});
+  });
+  merged.forEach(m => {
+    areas.push([
+      {yAxis: m.y - half, itemStyle: {color: m.c},
+       label: {formatter: m.label + ' $' + m.y, color: '#e8eaf0', fontSize: 11, fontWeight: 'bold', position: 'insideRight'}},
+      {yAxis: m.y + half},
+    ]);
+  });
 
   if (priceChart) priceChart.dispose();
   priceChart = echarts.init($('c4'));
@@ -502,7 +514,6 @@ function renderPrice(p, g) {
       name: p.symbol, type: 'candlestick', data, barWidth: '60%',
       itemStyle: {color: '#26a69a', color0: '#ef5350', borderColor: '#26a69a', borderColor0: '#ef5350'},
       markArea: {silent: true, data: areas},
-      markLine: {silent: true, symbol: 'none', data: markLines},
     }],
   });
 }
