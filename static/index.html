@@ -12,10 +12,6 @@
   body { margin:0; background:radial-gradient(1200px 600px at 50% -10%, #121828 0%, var(--bg) 60%); background-color:var(--bg); color:var(--txt); font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif; }
   header { display:flex; flex-wrap:wrap; align-items:center; gap:12px; padding:14px 18px; border-bottom:1px solid var(--line); background:linear-gradient(180deg,#161c2b,#121623); box-shadow:0 4px 16px rgba(0,0,0,.3); position:sticky; top:0; z-index:10; }
   header h1 { font-size:18px; margin:0; font-weight:700; letter-spacing:.3px; }
-  .pill { background:#1a2130; border:1px solid var(--line); border-radius:20px; padding:5px 12px; font-size:13px; white-space:nowrap; }
-  .pill b { font-weight:650; }
-  .pill.good { border-color:#1f5c55; color:#7de3d8; background:rgba(20,190,190,.12); }
-  .pill.bad { border-color:#6e2b2b; color:#ff9d9b; background:rgba(239,83,80,.12); }
   .spacer { flex:1; }
   .btn { background:#1a2130; color:var(--txt); border:1px solid var(--line); border-radius:8px; padding:7px 12px; font-size:13px; cursor:pointer; transition:border-color .15s, background .15s; }
   #expirySel { background:#1a2130; color:var(--txt); border:1px solid var(--line); border-radius:8px; padding:7px 8px; font-size:13px; cursor:pointer; max-width:170px; }
@@ -37,10 +33,23 @@
   .chart p.hint { font-size:12px; color:var(--dim); margin:0 0 8px; }
   .chart .box { width:100%; height:380px; }
   #err { display:none; background:#3a1d1d; border:1px solid #6e2b2b; color:#ffb3b1; border-radius:8px; padding:10px 14px; margin-bottom:14px; font-size:13px; }
-  #tabs { display:flex; gap:0; padding:10px 18px 0; max-width:1280px; margin:0 auto; }
-  #tabs .btn { border-radius:0; margin-left:-1px; }
-  #tabs .btn:first-child { border-radius:8px 0 0 8px; margin-left:0; }
-  #tabs .btn:last-child { border-radius:0 8px 8px 0; }
+  #context { display:flex; flex-wrap:wrap; align-items:center; gap:12px; padding:14px 18px; max-width:1280px; margin:0 auto; }
+  .ctx-stats { display:flex; align-items:center; }
+  .stat { display:flex; flex-direction:column; gap:1px; padding:2px 18px 2px 0; border-right:1px solid var(--line); margin-right:18px; }
+  .stat:last-child { border-right:none; margin-right:0; padding-right:0; }
+  .sl { font-size:11px; color:var(--dim); text-transform:uppercase; letter-spacing:.5px; }
+  .sv { font-size:16px; font-weight:650; font-variant-numeric:tabular-nums; white-space:nowrap; }
+  .stat.good .sv { color:#7de3d8; }
+  .stat.bad .sv { color:#ff9d9b; }
+  .ctx-controls { margin-left:auto; display:flex; gap:8px; align-items:center; }
+  .seg { display:flex; gap:0; }
+  .seg .btn { border-radius:0; margin-left:-1px; }
+  .seg .btn:first-child { border-radius:8px 0 0 8px; margin-left:0; }
+  .seg .btn:last-child { border-radius:0 8px 8px 0; }
+  #tabs { display:flex; gap:4px; padding:12px 18px 0; max-width:1280px; margin:0 auto; border-bottom:1px solid var(--line); }
+  #tabs .tab { background:transparent; border:none; border-bottom:2px solid transparent; border-radius:0; padding:10px 14px; font-size:14px; font-weight:600; color:var(--dim); cursor:pointer; margin:0; transition:color .15s; }
+  #tabs .tab:hover { color:var(--txt); }
+  #tabs .tab.active { color:var(--txt); border-bottom-color:var(--blue); }
   #mgrid { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:14px; }
   .mxpanel { background:linear-gradient(180deg,#171d2c,#121623); border:1px solid #232b3f; border-radius:16px; padding:14px 14px 10px; box-shadow:0 8px 24px rgba(0,0,0,.35); transition:border-color .15s; }
   .mxpanel:hover { border-color:#33405e; }
@@ -92,20 +101,24 @@
   <span class="tickers">
     <button class="btn tick active" data-sym="SPY">SPY</button><button class="btn tick" data-sym="QQQ">QQQ</button><button class="btn tick" data-sym="IWM">IWM</button><button class="btn tick" data-sym="DIA">DIA</button><button class="btn tick" data-sym="TSLA">TSLA</button><button class="btn tick" data-sym="NVDA">NVDA</button>
   </span>
-  <span class="pill">Spot <b id="spot">–</b></span>
-  <span class="pill">Exp move <b id="expMove">–</b></span>
-  <span class="pill" id="gexPill">Net GEX <b id="netgex">–</b></span>
-  <span class="pill" style="color:var(--dim)">Updated <b id="updated">–</b></span>
   <span class="spacer"></span>
-  <button class="btn" data-dte="9999">All</button>
-  <button class="btn active" data-dte="7">≤7D</button>
-  <button class="btn" data-dte="0">0DTE</button>
-  <button class="btn" data-dte="fri">Fridays</button>
-  <select id="expirySel" title="View a single expiry"><option value="">Single expiry…</option></select>
   <button class="btn" id="refresh" title="Refresh now">↻</button>
 </header>
+<div id="context">
+  <div class="ctx-stats">
+    <div class="stat"><span class="sl">Spot</span><span class="sv" id="spot">–</span></div>
+    <div class="stat" id="gexPill"><span class="sl">Net GEX</span><span class="sv" id="netgex">–</span></div>
+    <div class="stat"><span class="sl">Expected move</span><span class="sv" id="expMove">–</span></div>
+  </div>
+  <div class="ctx-controls">
+    <span class="seg">
+      <button class="btn" data-dte="9999">All</button><button class="btn active" data-dte="7">≤7D</button><button class="btn" data-dte="0">0DTE</button><button class="btn" data-dte="fri">Fridays</button>
+    </span>
+    <select id="expirySel" title="View a single expiry"><option value="">Single expiry…</option></select>
+  </div>
+</div>
 <nav id="tabs">
-  <button class="btn tab active" data-tab="levels">GEX Levels</button><button class="btn tab" data-tab="price">Price + Heatmap</button><button class="btn tab" data-tab="matrix">Matrix</button><button class="btn tab" data-tab="news">News</button>
+  <button class="tab active" data-tab="levels">GEX Levels</button><button class="tab" data-tab="price">Price + Heatmap</button><button class="tab" data-tab="matrix">Matrix</button><button class="tab" data-tab="news">News</button>
 </nav>
 <main>
   <div id="err"></div>
@@ -116,9 +129,6 @@
     <div class="chart"><h2>Gamma exposure by strike</h2>
       <p class="hint">Green = call GEX (resistance overhead) · Red = put GEX (support below). Dashed lines: spot, walls, flip, max pain.</p>
       <div class="box" id="c1"></div></div>
-    <div class="chart"><h2>Cumulative net GEX</h2>
-      <p class="hint">Running total of net GEX. The flip is where it crosses zero.</p>
-      <div class="box" id="c2" style="height:300px"></div></div>
     <div class="chart"><h2>Open interest &amp; volume by strike</h2>
       <p class="hint">Bars = open interest (updates daily) · Line = today's volume.</p>
       <div class="box" id="c3"></div></div>
@@ -160,7 +170,7 @@
     </div>
   </div>
 </main>
-<footer>Data: CBOE delayed quotes (~15 min delayed) · Open interest from prior close · Educational tool, not investment advice.</footer>
+<footer>Data: CBOE delayed quotes (~15 min delayed) · Open interest from prior close · Updated <span id="updatedFoot">–</span> · Educational tool, not investment advice.</footer>
 <script>
 const $ = id => document.getElementById(id);
 const BN = 1e9;
@@ -217,9 +227,9 @@ function render(d) {
   const em = d.expected_move;
   $('expMove').textContent = em ? '±$' + em.dollars.toFixed(2) + ' (' + em.pct.toFixed(2) + '%)' : '–';
   $('netgex').textContent = fmtB(d.totals.net_gex_bn * BN) + ' · ' + d.totals.regime;
-  $('updated').textContent = d.as_of ? d.as_of.slice(11, 16) + ' ET' : 'just now';
+  $('updatedFoot').textContent = d.as_of ? d.as_of.slice(11, 16) + ' ET' : 'just now';
   const gp = $('gexPill');
-  gp.className = 'pill ' + (d.totals.net_gex_bn >= 0 ? 'good' : 'bad');
+  gp.className = 'stat ' + (d.totals.net_gex_bn >= 0 ? 'good' : 'bad');
 
   const L = d.levels;
   $('levels').innerHTML =
@@ -237,7 +247,6 @@ function render(d) {
   const cg = rows.map(s => +(s.call_gex / BN).toFixed(3));
   const pg = rows.map(s => +(s.put_gex / BN).toFixed(3));
   const ng = rows.map(s => +((s.call_gex + s.put_gex) / BN).toFixed(3));
-  const cum = rows.map(s => +(s.cum_gex / BN).toFixed(3));
   const coi = rows.map(s => Math.round(s.call_oi)), poi = rows.map(s => Math.round(s.put_oi));
   const vol = rows.map(s => Math.round(s.total_vol));
 
@@ -276,21 +285,6 @@ function render(d) {
          data: [[{xAxis: em.lower, label: {formatter: 'exp move', color: '#4c8dff', fontSize: 10}}, {xAxis: em.upper}]]}} : {})},
     ]});
   charts.push(c1);
-
-  const c2 = echarts.init($('c2'));
-  c2.setOption({...base,
-    xAxis: {type: 'category', data: xs, axisLabel: {interval: Math.ceil(xs.length / 24)}},
-    yAxis: {type: 'value', name: '$B', nameTextStyle: {color: '#8b93a7'}},
-    series: [{name: 'Cumulative GEX', type: 'line', data: cum, symbol: 'none',
-      lineStyle: {color: '#f5c542', width: 2},
-      areaStyle: {color: 'rgba(245,197,66,0.12)'},
-      markLine: {silent: true, symbol: 'none', data: [
-        {yAxis: 0, lineStyle: {color: '#3a4358', type: 'solid'}},
-        ...marks.filter(m => (m.label === 'flip' || m.label.startsWith('spot')) && m.x >= lo && m.x <= hi)
-          .map(m => ({xAxis: m.x, lineStyle: {color: m.c, type: 'dashed', width: 1.2},
-            label: {formatter: m.label, color: m.c, fontSize: 10, position: 'insideEndTop'}})),
-      ]}}]});
-  charts.push(c2);
 
   const c3 = echarts.init($('c3'));
   c3.setOption({...base,
