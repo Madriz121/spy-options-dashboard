@@ -40,14 +40,25 @@
   #tabs .btn { border-radius:0; margin-left:-1px; }
   #tabs .btn:first-child { border-radius:8px 0 0 8px; margin-left:0; }
   #tabs .btn:last-child { border-radius:0 8px 8px 0; }
-  #mgrid { display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:12px; }
-  .mxpanel { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:10px; }
-  .mxpanel h3 { margin:0 0 2px; font-size:14px; font-weight:650; }
-  .mxpanel h3 span { color:var(--dim); font-weight:400; font-size:12px; }
-  .mxexp { font-size:11px; color:var(--dim); margin-bottom:8px; }
-  .mxrow { display:flex; justify-content:space-between; padding:3px 8px; border-radius:4px; font-size:12px; margin-bottom:2px; font-variant-numeric:tabular-nums; }
-  .mxrow.extreme { color:#141414; font-weight:700; }
-  .mxrow.spotrow { outline:1px solid #e8eaf0; outline-offset:-1px; }
+  #mgrid { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:14px; }
+  .mxpanel { background:linear-gradient(180deg,#171d2c,#121623); border:1px solid #232b3f; border-radius:16px; padding:14px 14px 10px; box-shadow:0 8px 24px rgba(0,0,0,.35); transition:border-color .15s; }
+  .mxpanel:hover { border-color:#33405e; }
+  .mxhead { display:flex; align-items:baseline; gap:8px; }
+  .mxhead h3 { margin:0; font-size:17px; font-weight:700; letter-spacing:.3px; }
+  .mxhead .mx-spot { font-size:13px; color:var(--dim); font-variant-numeric:tabular-nums; }
+  .mx-net { margin-left:auto; font-size:11px; font-weight:700; padding:3px 9px; border-radius:20px; white-space:nowrap; font-variant-numeric:tabular-nums; }
+  .mx-net.pos { color:#d3a6ff; background:rgba(190,90,255,.14); }
+  .mx-net.neg { color:#7de3d8; background:rgba(20,190,190,.12); }
+  .mxexp { font-size:11px; color:var(--dim); margin:3px 0 10px; }
+  .mxrow { display:flex; align-items:center; gap:8px; padding:2.5px 6px; border-radius:6px; font-size:12px; font-variant-numeric:tabular-nums; }
+  .mxrow:hover { background:rgba(255,255,255,.045); }
+  .mx-strike { width:46px; flex:none; color:#c6cddd; }
+  .mx-track { flex:1; height:14px; background:rgba(255,255,255,.05); border-radius:4px; overflow:hidden; }
+  .mx-track i { display:block; height:100%; border-radius:4px; }
+  .mx-val { width:78px; text-align:right; flex:none; color:#c6cddd; }
+  .mxrow.extreme .mx-val { color:#f5c542; font-weight:700; }
+  .mxrow.spotrow { background:rgba(232,234,240,.08); outline:1px solid rgba(232,234,240,.35); }
+  .mx-spottag { font-size:9px; font-weight:700; letter-spacing:.5px; color:#0b0e14; background:#e8eaf0; border-radius:3px; padding:1px 4px; flex:none; }
   .zoomrow { display:flex; gap:6px; align-items:center; margin:0 0 8px; font-size:12px; color:var(--dim); }
   .zoomrow .btn { padding:4px 10px; font-size:12px; }
   #mxlegend { display:flex; flex-wrap:wrap; gap:8px 18px; align-items:center; font-size:12px; color:var(--dim); margin:0 0 10px; }
@@ -130,11 +141,11 @@
     <div id="mloading" style="text-align:center;color:var(--dim);padding:60px 0;font-size:14px">Loading GEX matrix…</div>
     <div id="mwrap" style="display:none">
       <div id="mxlegend">
-        <span><i style="background:rgba(190,90,255,.75)"></i>positive gamma · call-heavy</span>
-        <span><i style="background:rgba(20,190,190,.75)"></i>negative gamma · put-heavy</span>
-        <span><i style="background:#f5c542"></i>heaviest strikes</span>
+        <span><i style="background:linear-gradient(90deg,#963cff,#be5aff)"></i>positive gamma · call-heavy</span>
+        <span><i style="background:linear-gradient(90deg,#0a9696,#14bebe)"></i>negative gamma · put-heavy</span>
+        <span><i style="background:linear-gradient(90deg,#c89614,#f5c542)"></i>heaviest strikes</span>
         <span><i class="sw-outline"></i>nearest to spot</span>
-        <span class="mxnote">brighter = heavier exposure</span>
+        <span class="mxnote">longer bar = heavier exposure</span>
       </div>
       <div id="mgrid"></div>
     </div>
@@ -371,38 +382,16 @@ function renderNews(d) {
 }
 
 // ---- Matrix tab ----
-const MATRIX_TICKERS = ['SPY', 'QQQ', 'IWM', 'DIA', 'TSLA', 'NVDA'];
-
-// Which expiry a Matrix panel shows: the globally selected single expiry if
-// the ticker has it (else its next expiry after that date), the nearest
-// Friday in Fridays mode, otherwise the ticker's nearest expiry.
-function pickMatrixExpiry(list) {
-  if (singleExpiry) {
-    const hit = list.find(e => e.date === singleExpiry);
-    if (hit) return hit.date;
-    const after = list.find(e => e.date > singleExpiry);
-    return (after || list[list.length - 1]).date;
-  }
-  if (fridaysOnly) {
-    const fri = list.find(e => e.dte <= 35 && new Date(e.date + 'T12:00:00').getDay() === 5);
-    if (fri) return fri.date;
-  }
-  return list[0].date;
-}
-
 async function loadMatrix(manual) {
   $('err').style.display = 'none';
   try {
-    const panels = await Promise.all(MATRIX_TICKERS.map(async t => {
-      const meta = await fetch(`/api/gex?symbol=${t}&max_dte=9999`).then(r => r.json());
-      const list = meta.all_expirations || meta.expirations;
-      if (meta.error || !list || !list.length) return {t, err: true};
-      const exp = pickMatrixExpiry(list);
-      const d = await fetch(`/api/gex?symbol=${t}&expiry=${exp}${manual ? '&refresh=true' : ''}`).then(r => r.json());
-      if (d.error) return {t, err: true};
-      return {t, d, exp};
-    }));
-    renderMatrix(panels);
+    const q = new URLSearchParams();
+    if (singleExpiry) q.set('expiry', singleExpiry);
+    if (fridaysOnly) q.set('fridays', 'true');
+    if (manual) q.set('refresh', 'true');
+    const d = await fetch(`/api/matrix?${q}`).then(r => r.json());
+    if (d.error) throw new Error(d.error);
+    renderMatrix(d.panels);
   } catch (e) {
     $('mloading').textContent = 'Could not load matrix: ' + e.message;
   }
@@ -412,36 +401,37 @@ function renderMatrix(panels) {
   $('mloading').style.display = 'none';
   const wrap = $('mgrid');
   let html = '';
-  panels.forEach(({t, d, exp, err}) => {
-    if (err || !d) { html += `<div class="mxpanel"><h3>${t}</h3><div class="mxexp">failed to load</div></div>`; return; }
-    const spot = d.spot;
-    const band = d.strikes
-      .filter(s => Math.abs(s.strike - spot) / spot <= 0.04 && s.net_gex !== 0)
-      .sort((a, b) => b.strike - a.strike);
-    // Center the 44-row window on the strike nearest spot (was: top 44 by
-    // strike, which silently dropped the whole lower tail on $1-spaced chains)
+  panels.forEach(p => {
+    if (p.error || !p.strikes) { html += `<div class="mxpanel"><div class="mxhead"><h3>${p.symbol}</h3></div><div class="mxexp">failed to load</div></div>`; return; }
+    const spot = p.spot;
+    const band = p.strikes; // already ±4% of spot, sorted high -> low
+    // Center the 44-row window on the strike nearest spot
     const spotIdx = band.reduce((best, s, i) =>
       Math.abs(s.strike - spot) < Math.abs(band[best].strike - spot) ? i : best, 0);
     const start = Math.max(0, Math.min(spotIdx - 22, band.length - 44));
     const rows = band.slice(start, start + 44);
     const truncated = band.length > rows.length;
-    if (!rows.length) { html += `<div class="mxpanel"><h3>${t}</h3><div class="mxexp">no data</div></div>`; return; }
+    if (!rows.length) { html += `<div class="mxpanel"><div class="mxhead"><h3>${p.symbol}</h3></div><div class="mxexp">no data</div></div>`; return; }
     const maxAbs = Math.max(...rows.map(s => Math.abs(s.net_gex)), 1);
     const maxPos = rows.reduce((a, b) => a.net_gex > b.net_gex ? a : b);
     const maxNeg = rows.reduce((a, b) => a.net_gex < b.net_gex ? a : b);
     const spotRow = rows.reduce((a, b) => Math.abs(b.strike - spot) < Math.abs(a.strike - spot) ? b : a);
-    html += `<div class="mxpanel"><h3>${t} <span>${spot.toFixed(2)}</span></h3>` +
-      `<div class="mxexp">${exp} · net ${fmtB(d.totals.net_gex_bn * BN)}${truncated ? ` · showing ${rows.length} of ${band.length} strikes` : ''}</div><div>`;
+    const netCls = p.net_gex_bn >= 0 ? 'pos' : 'neg';
+    html += `<div class="mxpanel"><div class="mxhead"><h3>${p.symbol}</h3><span class="mx-spot">$${spot.toFixed(2)}</span>` +
+      `<span class="mx-net ${netCls}">${fmtB(p.net_gex_bn * BN)}</span></div>` +
+      `<div class="mxexp">${p.expiry}${truncated ? ` · showing ${rows.length} of ${band.length} strikes` : ''}</div><div>`;
     rows.forEach(s => {
-      const n = Math.abs(s.net_gex) / maxAbs;
-      let bg, cls = 'mxrow';
-      if (s === maxPos || s === maxNeg) { bg = '#f5c542'; cls += ' extreme'; }
-      else if (s.net_gex >= 0) bg = 'rgba(190,90,255,' + (0.12 + 0.60 * n).toFixed(3) + ')';
-      else bg = 'rgba(20,190,190,' + (0.12 + 0.60 * n).toFixed(3) + ')';
+      const w = Math.max(4, 100 * Math.abs(s.net_gex) / maxAbs);
+      let grad, cls = 'mxrow';
+      if (s === maxPos || s === maxNeg) { grad = 'linear-gradient(90deg,rgba(200,150,20,.75),#f5c542)'; cls += ' extreme'; }
+      else if (s.net_gex >= 0) grad = 'linear-gradient(90deg,rgba(150,60,255,.55),rgba(190,90,255,.95))';
+      else grad = 'linear-gradient(90deg,rgba(10,150,150,.55),rgba(20,190,190,.95))';
       if (s === spotRow) cls += ' spotrow';
       const mv = s.net_gex / 1e6;
       const txt = (mv >= 0 ? '' : '−') + '$' + Math.abs(mv).toFixed(2) + 'M';
-      html += `<div class="${cls}" style="background:${bg}"><span>${s.strike}</span><span>${txt}</span></div>`;
+      html += `<div class="${cls}"><span class="mx-strike">${s.strike}</span>` +
+        `<span class="mx-track"><i style="width:${w.toFixed(1)}%;background:${grad}"></i></span>` +
+        `<span class="mx-val">${txt}</span>${s === spotRow ? '<span class="mx-spottag">SPOT</span>' : ''}</div>`;
     });
     html += `</div></div>`;
   });

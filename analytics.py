@@ -74,6 +74,14 @@ def analyze(payload: dict, max_dte: int = 9999, only_expiry: str | None = None,
     if spot <= 0:
         raise ValueError("no spot price in CBOE payload")
 
+    # Hoisted once: dte_of() calls datetime.now() per option otherwise.
+    today = _et_now().date()
+    # Cheap pre-filter for single-expiry analysis: the YYMMDD is embedded in
+    # every option symbol, so most options are skipped before regex parsing.
+    target_yymmdd = None
+    if only_expiry:
+        target_yymmdd = only_expiry[2:4] + only_expiry[5:7] + only_expiry[8:10]
+
     strikes: dict = {}
     expirations: dict = {}
     all_expirations: dict = {}
@@ -82,11 +90,14 @@ def analyze(payload: dict, max_dte: int = 9999, only_expiry: str | None = None,
     quotes: dict = {}
 
     for c in payload.get("options", []):
-        parsed = parse_option_symbol(c.get("option"))
+        opt = c.get("option") or ""
+        if target_yymmdd and target_yymmdd not in opt:
+            continue
+        parsed = parse_option_symbol(opt)
         if not parsed:
             continue
         expiry, is_call, strike = parsed
-        dte = dte_of(expiry)
+        dte = (expiry - today).days
         if dte < 0:
             continue
         all_expirations[str(expiry)] = dte
