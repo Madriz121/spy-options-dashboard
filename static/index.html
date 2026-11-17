@@ -69,8 +69,10 @@
   .mxrow.extreme .mx-val { color:#f5c542; font-weight:700; }
   .mxrow.spotrow { background:rgba(232,234,240,.08); outline:1px solid rgba(232,234,240,.35); }
   .mx-spottag { font-size:9px; font-weight:700; letter-spacing:.5px; color:#0b0e14; background:#e8eaf0; border-radius:3px; padding:1px 4px; flex:none; }
-  .zoomrow { display:flex; gap:6px; align-items:center; margin:0 0 8px; font-size:12px; color:var(--dim); }
-  .zoomrow .btn { padding:4px 10px; font-size:12px; }
+  .chead { display:flex; align-items:center; gap:12px; margin-bottom:8px; }
+  .chead h2 { margin:0; flex:1; }
+  .chead .seg .btn { padding:4px 10px; font-size:12px; }
+  .chart p.fnote { font-size:11px; color:var(--dim); margin:8px 0 0; }
   #mxlegend { display:flex; flex-wrap:wrap; gap:8px 18px; align-items:center; font-size:12px; color:var(--dim); margin:0 0 10px; }
   #mxlegend span { display:inline-flex; align-items:center; gap:6px; }
   #mxlegend i { width:14px; height:14px; border-radius:3px; display:inline-block; }
@@ -137,16 +139,12 @@
   <div id="tab-price" style="display:none">
     <div id="ploading" style="text-align:center;color:var(--dim);padding:60px 0;font-size:14px">Loading price chart…</div>
     <div id="pwrap" style="display:none">
-      <div class="chart"><h2 id="ptitle">Price vs GEX heatmap</h2>
-        <p class="hint">Bands group nearby strikes — green call-heavy, red put-heavy. Thick bars are the day's magnets. Scroll to zoom, drag to pan.</p>
-        <div class="zoomrow">
-          <span>Zoom</span>
-          <button class="btn zm" data-zoom="1">±1%</button>
-          <button class="btn zm active" data-zoom="2.5">±2.5%</button>
-          <button class="btn zm" data-zoom="5">±5%</button>
-          <button class="btn zm" data-zoom="10">±10%</button>
-        </div>
-        <div class="box" id="c4" style="height:560px"></div></div>
+      <div class="chart"><div class="chead"><h2 id="ptitle">Price vs GEX heatmap</h2>
+        <span class="seg">
+          <button class="btn zm" data-zoom="1">±1%</button><button class="btn zm active" data-zoom="2.5">±2.5%</button><button class="btn zm" data-zoom="5">±5%</button><button class="btn zm" data-zoom="10">±10%</button>
+        </span></div>
+        <div class="box" id="c4" style="height:560px"></div>
+        <p class="fnote">Green bands = call-heavy · red = put-heavy · thick bars are the day's magnets. Scroll to zoom, drag to pan.</p></div>
     </div>
   </div>
   <div id="tab-matrix" style="display:none">
@@ -496,7 +494,7 @@ function renderPrice(p, g) {
   const bands = [...buckets.values()].sort((a, b) => a.strike - b.strike);
   const maxAbs = Math.max(...bands.map(s => Math.abs(s.net_gex)), 1);
   const areas = bands.map(s => {
-    const inten = Math.min(0.30, 0.04 + 0.26 * Math.abs(s.net_gex) / maxAbs);
+    const inten = Math.min(0.22, 0.03 + 0.19 * Math.abs(s.net_gex) / maxAbs);
     const col = s.net_gex >= 0
       ? 'rgba(38,166,154,' + inten.toFixed(3) + ')'
       : 'rgba(239,83,80,' + inten.toFixed(3) + ')';
@@ -540,24 +538,43 @@ function renderPrice(p, g) {
   priceChart.setOption({
     backgroundColor: 'transparent',
     textStyle: {color: '#8b93a7', fontSize: 11},
-    grid: {left: 56, right: 70, top: 36, bottom: 30},
+    grid: [
+      {left: 56, right: 70, top: 36, height: '66%'},
+      {left: 56, right: 70, top: '76%', height: '14%'},
+    ],
     dataZoom: [{type: 'inside', yAxisIndex: 0, zoomOnMouseWheel: true, moveOnMouseMove: true, filterMode: 'none', ...zoomRange()}],
+    axisPointer: {link: [{xAxisIndex: 'all'}], label: {backgroundColor: '#2a3348', color: '#e8eaf0'}},
     tooltip: {trigger: 'axis', backgroundColor: '#1a2130', borderColor: '#1f2635',
       textStyle: {color: '#e8eaf0', fontSize: 12},
       formatter: ps => {
-        const b = bars[ps[0].dataIndex];
+        const p0 = ps.find(x => x.seriesIndex === 0) || ps[0];
+        const b = bars[p0.dataIndex];
         return '<b>' + b.t + ' ET</b><br>O ' + b.o + ' H ' + b.h + '<br>L ' + b.l + ' C ' + b.c +
           '<br>Vol ' + Number(b.v).toLocaleString();
       }},
-    xAxis: {type: 'category', data: times, axisLabel: {interval: Math.ceil(times.length / 16)},
-      splitLine: {show: false}},
-    yAxis: {type: 'value', min: yMin, max: yMax, splitNumber: 6,
-      splitLine: {lineStyle: {color: '#1c2333'}}, axisLabel: {fontSize: 10}},
-    series: [{
-      name: p.symbol, type: 'candlestick', data, barWidth: '60%',
-      itemStyle: {color: '#26a69a', color0: '#ef5350', borderColor: '#26a69a', borderColor0: '#ef5350'},
-      markArea: {silent: true, data: areas},
-    }],
+    xAxis: [
+      {type: 'category', data: times, gridIndex: 0, axisLabel: {show: false}, axisTick: {show: false}, axisLine: {show: false}, splitLine: {show: false}},
+      {type: 'category', data: times, gridIndex: 1, axisLabel: {interval: Math.ceil(times.length / 16)}, splitLine: {show: false}},
+    ],
+    yAxis: [
+      {type: 'value', gridIndex: 0, min: yMin, max: yMax, splitNumber: 6,
+       splitLine: {lineStyle: {color: '#1c2333'}}, axisLabel: {fontSize: 10}},
+      {type: 'value', gridIndex: 1, splitNumber: 2, splitLine: {show: false},
+       axisLabel: {show: false}, axisTick: {show: false}, axisLine: {show: false}},
+    ],
+    series: [
+      {name: p.symbol, type: 'candlestick', data, barWidth: '55%',
+       xAxisIndex: 0, yAxisIndex: 0,
+       itemStyle: {color: '#26a69a', color0: '#ef5350', borderColor: '#26a69a', borderColor0: '#ef5350'},
+       markArea: {silent: true, data: areas},
+       markLine: {silent: true, symbol: 'none', data: [{yAxis: spot,
+         lineStyle: {color: '#e8eaf0', type: 'dashed', width: 1},
+         label: {formatter: 'spot $' + spot.toFixed(0), color: '#e8eaf0', fontSize: 10, position: 'insideEndTop'}}]},
+      },
+      {name: 'Volume', type: 'bar', xAxisIndex: 1, yAxisIndex: 1, barWidth: '55%',
+       data: bars.map(b => ({value: b.v,
+         itemStyle: {color: b.c >= b.o ? 'rgba(38,166,154,0.45)' : 'rgba(239,83,80,0.45)'}}))},
+    ],
   });
 }
 
