@@ -6,33 +6,34 @@
 <title>SPY Options Dashboard — GEX, DEX, Key Levels</title>
 <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
 <style>
-  :root { --bg:#0b0e14; --panel:#131722; --line:#1f2635; --txt:#e8eaf0; --dim:#8b93a7;
+  :root { --bg:#0b0e14; --panel:#131722; --panel2:#171d2c; --line:#1f2635; --edge:#232b3f; --txt:#e8eaf0; --dim:#8b93a7;
           --green:#26a69a; --red:#ef5350; --blue:#4c8dff; --yellow:#f5c542; }
   * { box-sizing:border-box; }
-  body { margin:0; background:var(--bg); color:var(--txt); font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif; }
-  header { display:flex; flex-wrap:wrap; align-items:center; gap:12px; padding:14px 18px; border-bottom:1px solid var(--line); background:var(--panel); position:sticky; top:0; z-index:10; }
-  header h1 { font-size:18px; margin:0; font-weight:650; }
+  body { margin:0; background:radial-gradient(1200px 600px at 50% -10%, #121828 0%, var(--bg) 60%); background-color:var(--bg); color:var(--txt); font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif; }
+  header { display:flex; flex-wrap:wrap; align-items:center; gap:12px; padding:14px 18px; border-bottom:1px solid var(--line); background:linear-gradient(180deg,#161c2b,#121623); box-shadow:0 4px 16px rgba(0,0,0,.3); position:sticky; top:0; z-index:10; }
+  header h1 { font-size:18px; margin:0; font-weight:700; letter-spacing:.3px; }
   .pill { background:#1a2130; border:1px solid var(--line); border-radius:20px; padding:5px 12px; font-size:13px; white-space:nowrap; }
   .pill b { font-weight:650; }
-  .pill.good { border-color:#1f5c55; color:#7de3d8; }
-  .pill.bad { border-color:#6e2b2b; color:#ff9d9b; }
+  .pill.good { border-color:#1f5c55; color:#7de3d8; background:rgba(20,190,190,.12); }
+  .pill.bad { border-color:#6e2b2b; color:#ff9d9b; background:rgba(239,83,80,.12); }
   .spacer { flex:1; }
-  .btn { background:#1a2130; color:var(--txt); border:1px solid var(--line); border-radius:8px; padding:7px 12px; font-size:13px; cursor:pointer; }
+  .btn { background:#1a2130; color:var(--txt); border:1px solid var(--line); border-radius:8px; padding:7px 12px; font-size:13px; cursor:pointer; transition:border-color .15s, background .15s; }
   #expirySel { background:#1a2130; color:var(--txt); border:1px solid var(--line); border-radius:8px; padding:7px 8px; font-size:13px; cursor:pointer; max-width:170px; }
   .btn:hover { border-color:var(--blue); }
-  .btn.active { background:#24406e; border-color:var(--blue); }
+  .btn.active { background:linear-gradient(180deg,#2c4d84,#24406e); border-color:var(--blue); }
   .tickers { display:flex; gap:0; }
   .tickers .btn { border-radius:0; margin-left:-1px; }
   .tickers .btn:first-child { border-radius:8px 0 0 8px; margin-left:0; }
   .tickers .btn:last-child { border-radius:0 8px 8px 0; }
   main { padding:16px 18px 40px; max-width:1280px; margin:0 auto; }
-  .cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; margin-bottom:16px; }
-  .card { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:10px 12px; }
+  .cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin-bottom:16px; }
+  .card { background:linear-gradient(180deg,#171d2c,#121623); border:1px solid var(--edge); border-radius:16px; padding:12px 14px; box-shadow:0 8px 24px rgba(0,0,0,.35); transition:border-color .15s; }
+  .card:hover { border-color:#33405e; }
   .card .k { font-size:11px; color:var(--dim); text-transform:uppercase; letter-spacing:.5px; margin-bottom:4px; }
   .card .v { font-size:19px; font-weight:650; }
   .card .s { font-size:11px; color:var(--dim); margin-top:2px; }
-  .chart { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:12px; margin-bottom:16px; }
-  .chart h2 { font-size:14px; margin:0 0 4px; font-weight:600; }
+  .chart { background:linear-gradient(180deg,#171d2c,#121623); border:1px solid var(--edge); border-radius:16px; padding:14px; margin-bottom:16px; box-shadow:0 8px 24px rgba(0,0,0,.35); }
+  .chart h2 { font-size:15px; margin:0 0 4px; font-weight:700; letter-spacing:.3px; }
   .chart p.hint { font-size:12px; color:var(--dim); margin:0 0 8px; }
   .chart .box { width:100%; height:380px; }
   #err { display:none; background:#3a1d1d; border:1px solid #6e2b2b; color:#ffb3b1; border-radius:8px; padding:10px 14px; margin-bottom:14px; font-size:13px; }
@@ -66,13 +67,14 @@
   #mxlegend i { width:14px; height:14px; border-radius:3px; display:inline-block; }
   #mxlegend i.sw-outline { border:1px solid #e8eaf0; background:transparent; }
   #mxlegend .mxnote { font-style:italic; }
-  .news-verdict { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:16px; margin-bottom:14px; }
+  .news-verdict { background:linear-gradient(180deg,#171d2c,#121623); border:1px solid var(--edge); border-radius:16px; padding:16px; margin-bottom:14px; box-shadow:0 8px 24px rgba(0,0,0,.35); }
   .news-verdict.bull { border-color:#1f5c55; } .news-verdict.bull .nv-word { color:#7de3d8; }
   .news-verdict.bear { border-color:#6e2b2b; } .news-verdict.bear .nv-word { color:#ff9d9b; }
   .nv-word { font-size:26px; font-weight:700; }
   .nv-sub { font-size:13px; color:var(--dim); margin-top:4px; }
   .nv-note { font-size:12px; color:var(--dim); margin-top:8px; font-style:italic; }
-  .news-item { display:flex; gap:10px; align-items:baseline; padding:9px 4px; border-bottom:1px solid var(--line); font-size:13px; }
+  .news-item { display:flex; gap:10px; align-items:baseline; padding:9px 8px; border-bottom:1px solid var(--line); border-radius:6px; font-size:13px; }
+  .news-item:hover { background:rgba(255,255,255,.045); }
   .news-item a { color:var(--txt); text-decoration:none; flex:1; }
   .news-item a:hover { text-decoration:underline; }
   .ns { font-size:11px; width:14px; text-align:center; flex:none; }
