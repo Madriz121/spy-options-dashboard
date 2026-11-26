@@ -8,8 +8,10 @@ import json
 import time
 import urllib.request
 
-CBOE_URL = "https://cdn.cboe.com/api/global/delayed_quotes/options/{symbol}.json"
+CBOE_URL = "https://cdn-api.cboe.com/api/global/delayed_quotes/options/{symbol}.json"
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+# CBOE's CDN rejects requests without a Referer (403); verified 2026-11-25.
+HEADERS = {"User-Agent": USER_AGENT, "Referer": "https://www.cboe.com/"}
 
 _cache: dict = {}  # symbol -> (timestamp, payload)
 
@@ -21,9 +23,7 @@ def fetch_chain(symbol: str, ttl: int = 300) -> dict:
     hit = _cache.get(symbol)
     if hit and now - hit[0] < ttl:
         return hit[1]
-    req = urllib.request.Request(
-        CBOE_URL.format(symbol=symbol), headers={"User-Agent": USER_AGENT}
-    )
+    req = urllib.request.Request(CBOE_URL.format(symbol=symbol), headers=HEADERS)
     with urllib.request.urlopen(req, timeout=25) as resp:
         payload = json.loads(resp.read())["data"]
     payload["_fetched_at"] = now
